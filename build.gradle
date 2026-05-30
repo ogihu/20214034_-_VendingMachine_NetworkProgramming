@@ -1,0 +1,79 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'vending'
+version = '1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+application {
+    mainClass = 'vending.ClientMain'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'vending.ClientMain'
+    }
+}
+
+tasks.register('runServer1', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.server.ServerMain'
+    systemProperty 'server.role', 'SERVER1'
+    systemProperty 'server.port', '9090'
+    systemProperty 'peer.host', '127.0.0.1'
+    systemProperty 'peer.port', '9091'
+}
+
+tasks.register('runServer2', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.server.ServerMain'
+    systemProperty 'server.role', 'SERVER2'
+    systemProperty 'server.port', '9091'
+    systemProperty 'peer.host', '127.0.0.1'
+    systemProperty 'peer.port', '9090'
+}
+
+tasks.register('runBackup', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.server.ServerMain'
+    systemProperty 'server.role', 'BACKUP'
+    systemProperty 'server.port', '9092'
+    systemProperty 'server1.host', '127.0.0.1'
+    systemProperty 'server1.port', '9090'
+    systemProperty 'server2.host', '127.0.0.1'
+    systemProperty 'server2.port', '9091'
+}
+
+tasks.register('runCloud', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.server.ServerMain'
+    systemProperty 'server.role', 'CLOUD'
+    systemProperty 'server.port', '9093'
+    systemProperty 'server1.host', '127.0.0.1'
+    systemProperty 'server1.port', '9090'
+}
+
+tasks.register('runClient1', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.ClientMain'
+    systemProperty 'client.id', 'Client1'
+    systemProperty 'server.host', '127.0.0.1'
+    systemProperty 'server.port', '9090'
+    systemProperty 'backup.host', '127.0.0.1'
+    systemProperty 'backup.port', '9092'
+}
