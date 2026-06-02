@@ -1,0 +1,13 @@
+# Railway Cloud 노드 연결 예시
+# Railway TCP Proxy 주소로 cloud.host / cloud.port 변경
+#
+# cloud.host=xxxx.proxy.rlwy.net
+# cloud.port=12345
+
+client.id=Client1
+server.host=127.0.0.1
+server.port=9090
+backup.host=127.0.0.1
+backup.port=9092
+cloud.host=127.0.0.1
+cloud.port=9093

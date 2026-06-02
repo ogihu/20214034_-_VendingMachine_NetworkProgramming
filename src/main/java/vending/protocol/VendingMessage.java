@@ -89,7 +89,7 @@ public class VendingMessage {
         VendingMessage m = new VendingMessage();
         m.type = MessageType.SYNC;
         m.serverId = serverId;
-        m.payload = payload;
+        m.payload = encodeB64(payload);
         return m;
     }
 
@@ -113,6 +113,25 @@ public class VendingMessage {
         m.serverId = serverId;
         m.clientId = host;
         m.amount = port;
+        return m;
+    }
+
+    public static VendingMessage queryAlerts() {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.QUERY_ALERTS;
+        return m;
+    }
+
+    public static VendingMessage querySales() {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.QUERY_SALES;
+        return m;
+    }
+
+    public static VendingMessage payloadResponse(MessageType type, String payload) {
+        VendingMessage m = new VendingMessage();
+        m.type = type;
+        m.payload = payload;
         return m;
     }
 
@@ -153,6 +172,20 @@ public class VendingMessage {
 
     private String escape(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    public static String decodeB64(String b64) {
+        if (b64 == null || b64.isBlank()) {
+            return "";
+        }
+        return new String(java.util.Base64.getDecoder().decode(b64), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public static String encodeB64(String plain) {
+        if (plain == null || plain.isEmpty()) {
+            return "";
+        }
+        return java.util.Base64.getEncoder().encodeToString(plain.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public static VendingMessage fromJson(String json) {

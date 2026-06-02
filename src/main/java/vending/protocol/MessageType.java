@@ -13,5 +13,9 @@ public enum MessageType {
     SYNC,
     HEARTBEAT,
     HEARTBEAT_ACK,
-    ACTIVE_SERVER
+    ACTIVE_SERVER,
+    QUERY_ALERTS,
+    QUERY_SALES,
+    ALERT_LIST,
+    SALES_SUMMARY
 }

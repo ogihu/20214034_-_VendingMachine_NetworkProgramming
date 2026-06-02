@@ -25,6 +25,28 @@ jar {
     }
 }
 
+tasks.register('fatJar', Jar) {
+    group = 'build'
+    description = 'Railway/배포용 전체 JAR'
+    archiveBaseName = 'vending-all'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    manifest {
+        attributes 'Main-Class': 'vending.ClientMain'
+    }
+}
+
+tasks.register('buildCloudImage') {
+    group = 'deployment'
+    description = 'fatJar 후 Docker Cloud 이미지 빌드'
+    dependsOn fatJar
+    doLast {
+        exec {
+            commandLine 'docker', 'build', '-t', 'vending-cloud', '.'
+        }
+    }
+}
+
 tasks.register('runServer1', JavaExec) {
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
@@ -33,6 +55,8 @@ tasks.register('runServer1', JavaExec) {
     systemProperty 'server.port', '9090'
     systemProperty 'peer.host', '127.0.0.1'
     systemProperty 'peer.port', '9091'
+    systemProperty 'backup.sync.host', '127.0.0.1'
+    systemProperty 'backup.sync.port', '9092'
 }
 
 tasks.register('runServer2', JavaExec) {
@@ -43,6 +67,8 @@ tasks.register('runServer2', JavaExec) {
     systemProperty 'server.port', '9091'
     systemProperty 'peer.host', '127.0.0.1'
     systemProperty 'peer.port', '9090'
+    systemProperty 'backup.sync.host', '127.0.0.1'
+    systemProperty 'backup.sync.port', '9092'
 }
 
 tasks.register('runBackup', JavaExec) {
@@ -71,9 +97,38 @@ tasks.register('runClient1', JavaExec) {
     group = 'application'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'vending.ClientMain'
-    systemProperty 'client.id', 'Client1'
-    systemProperty 'server.host', '127.0.0.1'
-    systemProperty 'server.port', '9090'
-    systemProperty 'backup.host', '127.0.0.1'
-    systemProperty 'backup.port', '9092'
+    workingDir = projectDir
+    systemProperty 'client.config', 'config/client1.properties'
+}
+
+tasks.register('runClient2', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.ClientMain'
+    workingDir = projectDir
+    systemProperty 'client.config', 'config/client2.properties'
+}
+
+tasks.register('runClient3', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.ClientMain'
+    workingDir = projectDir
+    systemProperty 'client.config', 'config/client3.properties'
+}
+
+tasks.register('runClient4', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.ClientMain'
+    workingDir = projectDir
+    systemProperty 'client.config', 'config/client4.properties'
+}
+
+tasks.register('runEndDev', JavaExec) {
+    group = 'application'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'vending.ClientMain'
+    workingDir = projectDir
+    systemProperty 'client.config', 'config/end_dev.properties'
 }

@@ -9,6 +9,7 @@ import vending.ui.customer.CustomerPanel;
 import vending.ui.theme.KioskColors;
 import vending.ui.theme.KioskFonts;
 import vending.ui.theme.UiKit;
+import vending.util.AppLog;
 
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -17,6 +18,7 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
@@ -41,6 +43,7 @@ public class AdminPanel extends JPanel {
     private final JTextField collectField = new JTextField(8);
     private final JTextField newPwField = new JTextField(10);
     private final JLabel salesLabel = new JLabel("누적 매출: 0원");
+    private final JTextArea serverAlertArea = new JTextArea(4, 28);
 
     public AdminPanel(KioskService service, CustomerPanel customerPanel) {
         this.service = service;
@@ -125,12 +128,27 @@ public class AdminPanel extends JPanel {
         JButton reportBtn = new JButton("일별/월별 매출");
         reportBtn.addActionListener(e -> new SalesReportDialog(this, service).setVisible(true));
 
-        JPanel btnPanel = new JPanel(new GridLayout(3, 2, 4, 4));
+        JButton serverSummaryBtn = new JButton("서버 집계");
+        serverSummaryBtn.addActionListener(e -> {
+            service.pollServerInfo();
+            JOptionPane.showMessageDialog(this, service.getServerSalesSummary(), "서버 매출 집계", JOptionPane.INFORMATION_MESSAGE);
+        });
+
+        JPanel btnPanel = new JPanel(new GridLayout(4, 2, 4, 4));
         btnPanel.add(restockBtn);
         btnPanel.add(addCoinBtn);
         btnPanel.add(collectBtn);
         btnPanel.add(pwBtn);
         btnPanel.add(reportBtn);
+        btnPanel.add(serverSummaryBtn);
+
+        serverAlertArea.setEditable(false);
+        serverAlertArea.setLineWrap(true);
+        serverAlertArea.setFont(KioskFonts.small());
+
+        JPanel alertPanel = new JPanel(new BorderLayout());
+        alertPanel.add(new JLabel("서버 재고 알림"), BorderLayout.NORTH);
+        alertPanel.add(new JScrollPane(serverAlertArea), BorderLayout.CENTER);
 
         JPanel collectPanel = new JPanel();
         collectPanel.add(new JLabel("수금액"));
@@ -148,7 +166,11 @@ public class AdminPanel extends JPanel {
         managePanel.add(center, BorderLayout.CENTER);
         managePanel.add(collectPanel, BorderLayout.WEST);
         managePanel.add(pwPanel, BorderLayout.EAST);
-        managePanel.add(btnPanel, BorderLayout.SOUTH);
+
+        JPanel south = new JPanel(new BorderLayout(4, 4));
+        south.add(alertPanel, BorderLayout.CENTER);
+        south.add(btnPanel, BorderLayout.SOUTH);
+        managePanel.add(south, BorderLayout.SOUTH);
     }
 
     private void onLoginToggle() {
@@ -194,6 +216,7 @@ public class AdminPanel extends JPanel {
                 service.restockDrink(row, diff);
             }
         } catch (Exception ignored) {
+            AppLog.warn("ADMIN", "테이블 수정 중 오류");
         }
     }
 
@@ -217,5 +240,8 @@ public class AdminPanel extends JPanel {
 
         salesLabel.setText("누적 매출: " + service.getSessionSales() + "원 | "
                 + "자판기 잔고: " + coins.totalBalance() + "원");
+
+        String alerts = service.getServerAlerts();
+        serverAlertArea.setText(alerts == null || alerts.isBlank() ? "알림 없음" : alerts);
     }
 }

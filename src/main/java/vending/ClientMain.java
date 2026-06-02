@@ -2,6 +2,7 @@ package vending;
 
 import vending.ui.KioskFrame;
 import vending.ui.boot.BootSplashFrame;
+import vending.config.ClientConfig;
 import vending.network.ClientBootstrap;
 
 /**
@@ -10,6 +11,8 @@ import vending.network.ClientBootstrap;
 public class ClientMain {
 
     public static void main(String[] args) {
+        String configPath = System.getProperty("client.config", "config/client1.properties");
+        ClientConfig.load(configPath);
         String clientId = System.getProperty("client.id", "Client1");
 
         javax.swing.SwingUtilities.invokeLater(() -> {

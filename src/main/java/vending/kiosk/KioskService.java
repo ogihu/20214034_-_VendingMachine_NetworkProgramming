@@ -11,13 +11,17 @@ import vending.drink.DrinkCatalog;
 import vending.drink.DrinkInfo;
 import vending.drink.DrinkStockList;
 import vending.event.NetworkEventQueue;
+import vending.bluetooth.BluetoothInputServer;
 import vending.network.SocketClient;
+import vending.util.AppLog;
 import vending.payment.ChangeCalculator;
 import vending.payment.InsertedMoney;
 import vending.payment.PaymentValidator;
+import vending.protocol.MessageType;
 import vending.protocol.VendingMessage;
 import vending.sales.SalesService;
 import vending.thread.AdminWorkerThread;
+import vending.thread.AlertPollThread;
 import vending.thread.NetworkSendThread;
 
 import java.io.IOException;
@@ -48,6 +52,8 @@ public class KioskService {
     private Listener listener;
     private boolean adminMode;
     private int sessionSales;
+    private volatile String serverAlerts = "";
+    private volatile String serverSalesSummary = "";
 
     public KioskService(String clientId) {
         this.clientId = clientId;
@@ -64,6 +70,7 @@ public class KioskService {
             loadedCatalog = inventoryStore.loadDrinks();
             loadedCoins = inventoryStore.loadCoins();
         } catch (Exception e) {
+            AppLog.error("KIOSK", "재고/설정 로드 실패 - 기본값 사용", e);
             loadedCatalog = new DrinkCatalog();
             loadedCoins = new CoinInventory();
         }
@@ -76,6 +83,7 @@ public class KioskService {
         try {
             salesService.loadFromDisk();
         } catch (IOException e) {
+            AppLog.error("KIOSK", "매출 파일 로드 실패", e);
             notifyMessage("매출 파일 로드 실패: " + e.getMessage());
         }
 
@@ -86,6 +94,26 @@ public class KioskService {
         AdminWorkerThread adminThread = new AdminWorkerThread(this);
         adminThread.setDaemon(true);
         adminThread.start();
+
+        AlertPollThread alertPollThread = new AlertPollThread(this);
+        alertPollThread.setDaemon(true);
+        alertPollThread.start();
+
+        startBluetoothIfEnabled();
+    }
+
+    /** End_Dev 또는 bluetooth.enabled=true 일 때 BT 입력 서버 시작 */
+    private void startBluetoothIfEnabled() {
+        boolean enabled = "true".equalsIgnoreCase(System.getProperty("bluetooth.enabled", ""))
+                || "End_Dev".equalsIgnoreCase(clientId);
+        if (!enabled) {
+            return;
+        }
+        int btPort = Integer.parseInt(System.getProperty("bluetooth.port", "9200"));
+        BluetoothInputServer btServer = new BluetoothInputServer(this, btPort);
+        btServer.setDaemon(true);
+        btServer.start();
+        AppLog.info("BT", "End_Dev Bluetooth 입력 대기 (port " + btPort + ")");
     }
 
     public void setListener(Listener listener) {
@@ -348,6 +376,31 @@ public class KioskService {
 
     public String getChangeStatusText() {
         return isChangeOk() ? "정상" : "부족";
+    }
+
+    public String getServerAlerts() {
+        return serverAlerts;
+    }
+
+    public String getServerSalesSummary() {
+        return serverSalesSummary;
+    }
+
+    public void pollServerInfo() {
+        try {
+            VendingMessage alerts = new SocketClient().sendAndRead(VendingMessage.queryAlerts());
+            if (alerts != null && alerts.type == MessageType.ALERT_LIST) {
+                serverAlerts = alerts.payload == null ? "" : alerts.payload;
+            }
+
+            VendingMessage sales = new SocketClient().sendAndRead(VendingMessage.querySales());
+            if (sales != null && sales.type == MessageType.SALES_SUMMARY) {
+                serverSalesSummary = sales.payload == null ? "" : sales.payload;
+            }
+
+            fireChanged();
+        } catch (Exception ignored) {
+        }
     }
 
     private void fireChanged() {

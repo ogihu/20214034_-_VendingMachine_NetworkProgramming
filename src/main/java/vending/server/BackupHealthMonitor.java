@@ -46,7 +46,7 @@ public class BackupHealthMonitor extends Thread {
                 activePort = server2Port;
             } else {
                 activeServerId = "Backup";
-                activeHost = "127.0.0.1";
+                activeHost = System.getProperty("backup.public.host", "127.0.0.1");
                 activePort = Integer.parseInt(System.getProperty("backup.port", "9092"));
             }
 
@@ -78,5 +78,10 @@ public class BackupHealthMonitor extends Thread {
 
     public boolean isServer2Alive() {
         return server2Alive;
+    }
+
+    /** Server1/2 모두 응답 없을 때 Backup가 대체 서버 역할 */
+    public boolean isFailoverMode() {
+        return !server1Alive && !server2Alive;
     }
 }
