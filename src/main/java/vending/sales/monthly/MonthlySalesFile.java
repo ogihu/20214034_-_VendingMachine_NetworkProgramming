@@ -12,11 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 월별 매출 파일 읽기/쓰기.
- * 저장 경로: data/sales/monthly/yyyy-MM.sales
- * 형식: drinkName|quantity|amount (해당 월 누적)
- */
+// 월별매출기능
 public class MonthlySalesFile {
 
     public Path filePath(String monthKey) {

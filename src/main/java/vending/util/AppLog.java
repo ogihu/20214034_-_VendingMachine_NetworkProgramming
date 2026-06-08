@@ -8,9 +8,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-/**
- * 파일 + 콘솔 로그. 예외 기록용.
- */
+// 로그기능
 public final class AppLog {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -41,7 +39,8 @@ public final class AppLog {
             Files.createDirectories(LOG_PATH.getParent());
             Files.writeString(LOG_PATH, line + System.lineSeparator(), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            System.err.println("[LOG-FALLBACK] " + line + " / " + e.getMessage());
         }
     }
 }

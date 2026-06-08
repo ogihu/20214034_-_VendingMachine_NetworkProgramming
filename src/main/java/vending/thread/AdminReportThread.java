@@ -2,15 +2,13 @@ package vending.thread;
 
 import javax.swing.SwingUtilities;
 import vending.kiosk.KioskService;
+import vending.util.AppLog;
 import vending.sales.model.SaleEntry;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.function.Consumer;
 
-/**
- * 매출 보고서 파일 읽기를 별도 스레드에서 처리한다.
- */
 public class AdminReportThread extends Thread {
 
     private final KioskService service;
@@ -29,8 +27,7 @@ public class AdminReportThread extends Thread {
     @Override
     public void run() {
         try {
-            List<SaleEntry> daily = service.getSalesService().allEntries();
-            daily = service.getSalesService().getSorter().sortByDateDesc(daily);
+            List<SaleEntry> daily = service.getSalesService().allEntriesSortedByDate();
             List<SaleEntry> dailyFinal = daily;
             SwingUtilities.invokeLater(() -> dailyConsumer.accept(dailyFinal));
 
@@ -38,7 +35,7 @@ public class AdminReportThread extends Thread {
             List<String[]> monthly = service.getSalesService().monthlyRows(monthKey);
             SwingUtilities.invokeLater(() -> monthlyConsumer.accept(monthly));
         } catch (Exception e) {
-            e.printStackTrace();
+            AppLog.error("ADMIN", "매출 보고서 로드 실패", e);
         }
     }
 }

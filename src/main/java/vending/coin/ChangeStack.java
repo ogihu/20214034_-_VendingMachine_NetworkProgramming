@@ -1,9 +1,6 @@
 package vending.coin;
 
-/**
- * 거스름돈 반환 시 사용할 스택.
- * 큰 단위부터 반환하기 위해 금액을 스택에 쌓아 둔다.
- */
+// 거스름스택기능
 public class ChangeStack {
 
     private int[] values;
@@ -16,6 +13,7 @@ public class ChangeStack {
 
     public void push(int value) {
         if (top >= values.length - 1) {
+            // 스택 확장
             int[] bigger = new int[values.length + 8];
             System.arraycopy(values, 0, bigger, 0, values.length);
             values = bigger;
@@ -38,8 +36,8 @@ public class ChangeStack {
         return top + 1;
     }
 
-    /** pop 없이 전체 반환 목록 복사 */
     public int[] toArray() {
+        // 반환 목록
         int[] copy = new int[size()];
         System.arraycopy(values, 0, copy, 0, copy.length);
         return copy;

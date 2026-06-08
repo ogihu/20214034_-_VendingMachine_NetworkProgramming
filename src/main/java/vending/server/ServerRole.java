@@ -1,8 +1,6 @@
 package vending.server;
 
-/**
- * 서버 역할.
- */
+// 서버역할
 public enum ServerRole {
     SERVER1,
     SERVER2,

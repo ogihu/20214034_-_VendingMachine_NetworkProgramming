@@ -14,6 +14,7 @@ import vending.event.NetworkEventQueue;
 import vending.bluetooth.BluetoothInputServer;
 import vending.network.SocketClient;
 import vending.util.AppLog;
+import vending.util.VendingException;
 import vending.payment.ChangeCalculator;
 import vending.payment.InsertedMoney;
 import vending.payment.PaymentValidator;
@@ -24,11 +25,7 @@ import vending.thread.AdminWorkerThread;
 import vending.thread.AlertPollThread;
 import vending.thread.NetworkSendThread;
 
-import java.io.IOException;
-
-/**
- * 키오스크 핵심 로직.
- */
+// 키오스크핵심기능
 public class KioskService {
 
     public interface Listener {
@@ -57,7 +54,11 @@ public class KioskService {
 
     public KioskService(String clientId) {
         this.clientId = clientId;
-        DataPaths.ensureDirectories();
+        try {
+            DataPaths.ensureDirectories();
+        } catch (VendingException e) {
+            AppLog.error("KIOSK", e.getMessage(), e);
+        }
 
         inventoryStore = new InventoryFileStore();
         passwordStore = new AdminPasswordStore();
@@ -69,22 +70,25 @@ public class KioskService {
         try {
             loadedCatalog = inventoryStore.loadDrinks();
             loadedCoins = inventoryStore.loadCoins();
-        } catch (Exception e) {
-            AppLog.error("KIOSK", "재고/설정 로드 실패 - 기본값 사용", e);
+        } catch (VendingException e) {
+            AppLog.error("KIOSK", e.getMessage(), e);
+            notifyMessage(e.getMessage());
             loadedCatalog = new DrinkCatalog();
             loadedCoins = new CoinInventory();
         }
 
         catalog = loadedCatalog;
         coinInventory = loadedCoins;
+        ensureMinimumCoins();
+        normalizeDrinkNames();
         insertedMoney = new InsertedMoney();
         salesService = new SalesService(clientId, eventQueue);
 
         try {
             salesService.loadFromDisk();
-        } catch (IOException e) {
+        } catch (VendingException e) {
             AppLog.error("KIOSK", "매출 파일 로드 실패", e);
-            notifyMessage("매출 파일 로드 실패: " + e.getMessage());
+            notifyMessage(e.getMessage());
         }
 
         NetworkSendThread sendThread = new NetworkSendThread(eventQueue, clientId);
@@ -102,18 +106,66 @@ public class KioskService {
         startBluetoothIfEnabled();
     }
 
-    /** End_Dev 또는 bluetooth.enabled=true 일 때 BT 입력 서버 시작 */
+    private void ensureMinimumCoins() {
+        int[][] minimums = {{1000, 20}, {500, 30}, {100, 40}, {50, 40}, {10, 50}};
+        for (int[] min : minimums) {
+            CoinSlot slot = coinInventory.findSlot(min[0]);
+            if (slot != null && slot.getCount() < min[1]) {
+                slot.setCount(min[1]);
+            }
+        }
+    }
+
+    private void normalizeDrinkNames() {
+        renameDefault(1, "프리미엄커피", "고급믹스커피");
+        renameDefault(2, "생수", "물");
+        renameDefault(5, "캔커피(고급)", "고급캔커피");
+        saveInventoryQuiet();
+    }
+
+    private void renameDefault(int index, String oldName, String newName) {
+        if (index < catalog.drinkCount() && oldName.equals(catalog.getDrink(index).getName())) {
+            catalog.getDrink(index).setName(newName);
+        }
+    }
+
     private void startBluetoothIfEnabled() {
         boolean enabled = "true".equalsIgnoreCase(System.getProperty("bluetooth.enabled", ""))
                 || "End_Dev".equalsIgnoreCase(clientId);
         if (!enabled) {
             return;
         }
-        int btPort = Integer.parseInt(System.getProperty("bluetooth.port", "9200"));
-        BluetoothInputServer btServer = new BluetoothInputServer(this, btPort);
-        btServer.setDaemon(true);
-        btServer.start();
-        AppLog.info("BT", "End_Dev Bluetooth 입력 대기 (port " + btPort + ")");
+        int btPort;
+        try {
+            btPort = Integer.parseInt(System.getProperty("bluetooth.port", "9200"));
+        } catch (NumberFormatException e) {
+            AppLog.error("BT", "bluetooth.port 형식 오류", e);
+            notifyMessage("Bluetooth 포트 설정 오류");
+            return;
+        }
+        try {
+            BluetoothInputServer btServer = new BluetoothInputServer(this, btPort);
+            btServer.setDaemon(true);
+            btServer.start();
+            AppLog.info("BT", "Bluetooth 입력 대기 (port " + btPort + ", client=" + clientId + ")");
+        } catch (Exception e) {
+            AppLog.error("BT", "Bluetooth 서버 시작 실패 (port " + btPort + ")", e);
+            notifyMessage("Bluetooth 입력 서버 시작 실패 (port " + btPort + ")");
+        }
+    }
+
+    public String listDrinksForBluetooth() {
+        StringBuilder sb = new StringBuilder("OK:LIST:");
+        for (int i = 0; i < catalog.drinkCount(); i++) {
+            if (i > 0) {
+                sb.append(';');
+            }
+            var drink = catalog.getDrink(i);
+            int stock = catalog.getStock(i).size();
+            sb.append(i).append('=').append(drink.getName())
+                    .append('(').append(drink.getPrice()).append("원,").append(stock).append("개)");
+        }
+        return sb.toString();
     }
 
     public void setListener(Listener listener) {
@@ -144,8 +196,31 @@ public class KioskService {
         return sessionSales;
     }
 
+    public int getTotalSalesAmount() {
+        try {
+            return salesService.totalSalesAmount();
+        } catch (VendingException e) {
+            return sessionSales;
+        }
+    }
+
+    public int getTodaySalesAmount() {
+        try {
+            return salesService.todaySalesAmount();
+        } catch (VendingException e) {
+            return 0;
+        }
+    }
+
     public int insertedTotal() {
         return insertedMoney.isReleased() ? 0 : insertedMoney.total();
+    }
+
+    public String insertedSummary() {
+        if (insertedMoney.isReleased() || insertedMoney.size() == 0) {
+            return "투입 내역 없음";
+        }
+        return formatUnits(insertedMoney.toArray());
     }
 
     public boolean canBuy(int drinkIndex) {
@@ -153,7 +228,37 @@ public class KioskService {
             return false;
         }
         DrinkInfo drink = catalog.getDrink(drinkIndex);
-        return !catalog.getStock(drinkIndex).isSoldOut() && insertedTotal() >= drink.getPrice();
+        if (catalog.getStock(drinkIndex).isSoldOut() || insertedTotal() < drink.getPrice()) {
+            return false;
+        }
+        return canReturnChange(drinkIndex);
+    }
+
+    public boolean canAfford(int drinkIndex) {
+        if (adminMode || catalog.getStock(drinkIndex).isSoldOut()) {
+            return false;
+        }
+        return insertedTotal() >= catalog.getDrink(drinkIndex).getPrice();
+    }
+
+    public boolean canReturnChange(int drinkIndex) {
+        if (drinkIndex < 0 || drinkIndex >= catalog.drinkCount()) {
+            return false;
+        }
+        int change = changeAmountFor(drinkIndex);
+        return ChangeCalculator.canMakeChange(coinInventory, change) == null;
+    }
+
+    public int changeAmountFor(int drinkIndex) {
+        if (drinkIndex < 0 || drinkIndex >= catalog.drinkCount()) {
+            return 0;
+        }
+        int change = insertedTotal() - catalog.getDrink(drinkIndex).getPrice();
+        return Math.max(change, 0);
+    }
+
+    public String changePreviewFor(int drinkIndex) {
+        return ChangeCalculator.preview(coinInventory, changeAmountFor(drinkIndex));
     }
 
     public boolean isSoldOut(int drinkIndex) {
@@ -164,7 +269,7 @@ public class KioskService {
         if (isSoldOut(drinkIndex)) {
             return false;
         }
-        return insertedTotal() >= catalog.getDrink(drinkIndex).getPrice();
+        return canAfford(drinkIndex);
     }
 
     public String insertMoney(int unit) {
@@ -199,19 +304,48 @@ public class KioskService {
             return "반환할 금액이 없습니다.";
         }
 
-        String lack = ChangeCalculator.canMakeChange(coinInventory, amount);
-        if (lack != null) {
-            return lack;
+        int[] units = insertedMoney.toArray();
+        if (!canReturnSameUnits(units)) {
+            return "반환 화폐 부족";
         }
 
-        ChangeStack stack = new ChangeStack(16);
-        if (!ChangeCalculator.dispense(coinInventory, amount, stack)) {
-            return "거스름돈 없음";
+        for (int unit : units) {
+            CoinSlot slot = coinInventory.findSlot(unit);
+            slot.take(1);
         }
-
         insertedMoney.release();
         fireChanged();
-        return "반환 완료: " + amount + "원";
+        return "반환 완료: " + amount + "원 " + formatUnits(units);
+    }
+
+    private boolean canReturnSameUnits(int[] units) {
+        java.util.Map<Integer, Integer> counts = new java.util.HashMap<>();
+        for (int unit : units) {
+            counts.merge(unit, 1, Integer::sum);
+        }
+        for (java.util.Map.Entry<Integer, Integer> e : counts.entrySet()) {
+            CoinSlot slot = coinInventory.findSlot(e.getKey());
+            if (slot == null || slot.getCount() < e.getValue()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String formatUnits(int[] units) {
+        java.util.Map<Integer, Integer> counts = new java.util.TreeMap<>(java.util.Collections.reverseOrder());
+        for (int unit : units) {
+            counts.merge(unit, 1, Integer::sum);
+        }
+        StringBuilder sb = new StringBuilder("(");
+        int i = 0;
+        for (java.util.Map.Entry<Integer, Integer> e : counts.entrySet()) {
+            if (i++ > 0) {
+                sb.append(", ");
+            }
+            sb.append(e.getKey()).append("원 ").append(e.getValue()).append("개");
+        }
+        return sb.append(")").toString();
     }
 
     public String buyDrink(int drinkIndex) {
@@ -249,8 +383,8 @@ public class KioskService {
         if (stock.isSoldOut()) {
             try {
                 inventoryStore.logSoldOut(drink.getName());
-            } catch (IOException e) {
-                notifyMessage("품절 기록 저장 실패");
+            } catch (VendingException e) {
+                notifyMessage(e.getMessage());
             }
             eventQueue.enqueue(VendingMessage.stockAlert(clientId, drink.getName(), 0));
         }
@@ -265,14 +399,18 @@ public class KioskService {
             salesService.recordSale(drink.getName(), price);
             sessionSales += price;
             saveInventory();
-        } catch (Exception e) {
+        } catch (VendingException e) {
             stock.addOne();
-            return "매출 저장 실패: " + e.getMessage();
+            ChangeCalculator.refund(coinInventory, stack);
+            return e.getMessage();
         }
 
         insertedMoney.release();
         fireChanged();
-        return "판매 완료: " + drink.getName();
+        if (change <= 0) {
+            return "판매 완료: " + drink.getName() + " / 거스름돈 0원";
+        }
+        return "판매 완료: " + drink.getName() + " / 거스름돈 " + change + "원 (" + ChangeCalculator.format(stack) + ")";
     }
 
     public boolean loginAdmin(String password) {
@@ -294,8 +432,8 @@ public class KioskService {
     public String changePassword(String newPw) {
         try {
             return passwordStore.changePassword(newPw);
-        } catch (IOException e) {
-            return "비밀번호 저장 실패";
+        } catch (VendingException e) {
+            return e.getMessage();
         }
     }
 
@@ -307,6 +445,14 @@ public class KioskService {
         fireChanged();
     }
 
+    public void updateDrinkStock(int index, int count) {
+        catalog.getStock(index).setCount(count);
+        DrinkInfo drink = catalog.getDrink(index);
+        eventQueue.enqueue(VendingMessage.stock(clientId, drink.getName(), count));
+        saveInventoryQuiet();
+        fireChanged();
+    }
+
     public void addCoinStock(int unit, int count) {
         CoinSlot slot = coinInventory.findSlot(unit);
         if (slot != null) {
@@ -314,6 +460,19 @@ public class KioskService {
             saveInventoryQuiet();
             fireChanged();
         }
+    }
+
+    public void updateCoinStock(int unit, int count) {
+        CoinSlot slot = coinInventory.findSlot(unit);
+        if (slot != null && count >= 0) {
+            slot.setCount(count);
+            saveInventoryQuiet();
+            fireChanged();
+        }
+    }
+
+    public int maxCollectableAmount() {
+        return collectService.maxCollectable(coinInventory);
     }
 
     public String collectMoney(int amount) {
@@ -342,7 +501,7 @@ public class KioskService {
         fireChanged();
     }
 
-    public void saveInventory() throws IOException {
+    public void saveInventory() throws VendingException {
         inventoryStore.saveDrinks(catalog);
         inventoryStore.saveCoins(coinInventory);
     }
@@ -354,16 +513,13 @@ public class KioskService {
     private void saveInventoryQuiet() {
         try {
             saveInventory();
-        } catch (IOException e) {
-            notifyMessage("재고 저장 실패");
+        } catch (VendingException e) {
+            notifyMessage(e.getMessage());
         }
     }
 
     public boolean isServerOk() {
-        String backupHost = System.getProperty("backup.host", System.getProperty("server.host", "127.0.0.1"));
-        int backupPort = Integer.parseInt(System.getProperty("backup.port", "9092"));
-        return new SocketClient(backupHost, backupPort).ping()
-                || new SocketClient().ping();
+        return new SocketClient().ping();
     }
 
     public String getServerStatusText() {
@@ -388,18 +544,84 @@ public class KioskService {
 
     public void pollServerInfo() {
         try {
-            VendingMessage alerts = new SocketClient().sendAndRead(VendingMessage.queryAlerts());
+            SocketClient client = new SocketClient();
+
+            VendingMessage alerts = client.sendAndRead(VendingMessage.queryAlerts());
             if (alerts != null && alerts.type == MessageType.ALERT_LIST) {
                 serverAlerts = alerts.payload == null ? "" : alerts.payload;
             }
 
-            VendingMessage sales = new SocketClient().sendAndRead(VendingMessage.querySales());
+            VendingMessage sales = client.sendAndRead(VendingMessage.querySales());
             if (sales != null && sales.type == MessageType.SALES_SUMMARY) {
                 serverSalesSummary = sales.payload == null ? "" : sales.payload;
             }
 
+            VendingMessage remote = client.sendAndRead(VendingMessage.queryRemote(clientId));
+            if (remote != null && remote.type == MessageType.REMOTE_COMMAND_LIST
+                    && remote.payload != null && !remote.payload.isBlank()) {
+                applyRemoteCommands(remote.payload);
+            }
+
             fireChanged();
-        } catch (Exception ignored) {
+        } catch (VendingException e) {
+            AppLog.warn("KIOSK", "서버 조회 실패: " + e.getMessage());
+        }
+    }
+
+    public String requestRemoteDrinkChange(String targetClientId, int index, String newName, int price) {
+        if (!adminMode) {
+            return "관리자 모드에서만 가능합니다.";
+        }
+        if (index < 0 || index >= catalog.drinkCount()) {
+            return "음료 인덱스가 올바르지 않습니다.";
+        }
+        String oldName = catalog.getDrink(index).getName();
+        try {
+            VendingMessage response = new SocketClient().sendAndRead(
+                    VendingMessage.remoteDrinkSet(targetClientId, index, oldName, newName, price));
+            if (response != null && response.type == MessageType.ERROR) {
+                return response.payload;
+            }
+            return "서버에 원격 변경 요청 완료: " + targetClientId;
+        } catch (VendingException e) {
+            return e.getMessage();
+        }
+    }
+
+    private void applyRemoteCommands(String payload) {
+        String[] lines = payload.split("\n");
+        boolean changed = false;
+        for (String line : lines) {
+            if (line == null || line.isBlank()) {
+                continue;
+            }
+            try {
+                VendingMessage cmd = VendingMessage.fromJson(line.trim());
+                if (cmd.type != MessageType.REMOTE_DRINK_UPDATE) {
+                    continue;
+                }
+                int index = cmd.quantity;
+                if (index >= 0 && index < catalog.drinkCount()) {
+                    catalog.getDrink(index).setName(cmd.newName);
+                    catalog.getDrink(index).setPrice(cmd.price);
+                    changed = true;
+                    notifyMessage("서버 원격 변경: " + cmd.newName + " (" + cmd.price + "원)");
+                } else {
+                    int byName = catalog.findIndexByName(cmd.drink);
+                    if (byName >= 0) {
+                        catalog.getDrink(byName).setName(cmd.newName);
+                        catalog.getDrink(byName).setPrice(cmd.price);
+                        changed = true;
+                        notifyMessage("서버 원격 변경: " + cmd.newName);
+                    }
+                }
+            } catch (Exception e) {
+                AppLog.warn("KIOSK", "원격 명령 처리 실패: " + e.getMessage());
+            }
+        }
+        if (changed) {
+            saveInventoryQuiet();
+            fireChanged();
         }
     }
 

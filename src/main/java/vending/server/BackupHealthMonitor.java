@@ -3,10 +3,9 @@ package vending.server;
 import vending.network.SocketClient;
 import vending.protocol.MessageType;
 import vending.protocol.VendingMessage;
+import vending.util.AppLog;
 
-/**
- * Backup 서버: 10초마다 Server1/2 헬스체크 후 활성 서버 결정.
- */
+// 백업헬스체크기능
 public class BackupHealthMonitor extends Thread {
 
     private final String server1Host;
@@ -16,6 +15,8 @@ public class BackupHealthMonitor extends Thread {
 
     private volatile boolean server1Alive;
     private volatile boolean server2Alive;
+    private boolean prevServer1Alive = true;
+    private boolean prevServer2Alive = true;
     private volatile String activeServerId = "Server1";
     private volatile String activeHost;
     private volatile int activePort;
@@ -33,8 +34,14 @@ public class BackupHealthMonitor extends Thread {
     @Override
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
-            server1Alive = ping(server1Host, server1Port);
-            server2Alive = ping(server2Host, server2Port);
+            boolean s1 = ping(server1Host, server1Port);
+            boolean s2 = ping(server2Host, server2Port);
+            logStateChange("Server1", server1Host, server1Port, prevServer1Alive, s1);
+            logStateChange("Server2", server2Host, server2Port, prevServer2Alive, s2);
+            prevServer1Alive = s1;
+            prevServer2Alive = s2;
+            server1Alive = s1;
+            server2Alive = s2;
 
             if (server1Alive) {
                 activeServerId = "Server1";
@@ -47,7 +54,7 @@ public class BackupHealthMonitor extends Thread {
             } else {
                 activeServerId = "Backup";
                 activeHost = System.getProperty("backup.public.host", "127.0.0.1");
-                activePort = Integer.parseInt(System.getProperty("backup.port", "9092"));
+                activePort = parseBackupPort();
             }
 
             try {
@@ -68,6 +75,26 @@ public class BackupHealthMonitor extends Thread {
         }
     }
 
+    private void logStateChange(String label, String host, int port, boolean wasAlive, boolean alive) {
+        if (wasAlive == alive) {
+            return;
+        }
+        if (alive) {
+            AppLog.info("BACKUP", label + " 복구: " + host + ":" + port);
+        } else {
+            AppLog.warn("BACKUP", label + " 응답 없음: " + host + ":" + port);
+        }
+    }
+
+    private int parseBackupPort() {
+        try {
+            return Integer.parseInt(System.getProperty("backup.port", "9092"));
+        } catch (NumberFormatException e) {
+            AppLog.warn("BACKUP", "backup.port 형식 오류, 9092 사용: " + e.getMessage());
+            return 9092;
+        }
+    }
+
     public VendingMessage activeServerMessage() {
         return VendingMessage.activeServer(activeServerId, activeHost, activePort);
     }
@@ -80,7 +107,7 @@ public class BackupHealthMonitor extends Thread {
         return server2Alive;
     }
 
-    /** Server1/2 모두 응답 없을 때 Backup가 대체 서버 역할 */
+    // 대체서버기능
     public boolean isFailoverMode() {
         return !server1Alive && !server2Alive;
     }

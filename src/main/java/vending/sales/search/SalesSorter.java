@@ -6,9 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 매출 검색/정렬 유틸.
- */
+// 정렬기능
 public class SalesSorter {
 
     public List<SaleEntry> sortByDateDesc(List<SaleEntry> source) {

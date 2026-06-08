@@ -2,9 +2,7 @@ package vending.event;
 
 import vending.protocol.VendingMessage;
 
-/**
- * 서버 전송 대기 메시지 큐.
- */
+// 전송큐기능
 public class NetworkEventQueue {
 
     private static class Node {
@@ -17,6 +15,7 @@ public class NetworkEventQueue {
     private int size;
 
     public synchronized void enqueue(VendingMessage message) {
+        // 큐 삽입
         Node node = new Node();
         node.data = message;
         if (rear == null) {
@@ -36,6 +35,8 @@ public class NetworkEventQueue {
                 return null;
             }
         }
+
+        // 큐 제거
         VendingMessage data = front.data;
         front = front.next;
         if (front == null) {

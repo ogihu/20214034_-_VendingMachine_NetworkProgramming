@@ -2,9 +2,7 @@ package vending.coin;
 
 import java.io.Serializable;
 
-/**
- * 동전/지폐 1종의 보관함.
- */
+// 화폐슬롯
 public class CoinSlot implements Serializable {
 
     private static final long serialVersionUID = 1L;

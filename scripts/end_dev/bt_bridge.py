@@ -9,6 +9,8 @@
   sudo python3 bt_bridge.py
 
 스마트폰에서 전송 예:
+  HELP
+  LIST
   INSERT:500
   BUY:0
   RETURN

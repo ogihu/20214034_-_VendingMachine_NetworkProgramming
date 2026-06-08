@@ -3,9 +3,7 @@ package vending.network;
 import vending.protocol.VendingMessage;
 import vending.util.AppLog;
 
-/**
- * Railway Cloud 노드로 메시지 백업 전송.
- */
+// 클라우드전송기능
 public class CloudRelay {
 
     private final String cloudHost;
@@ -30,7 +28,7 @@ public class CloudRelay {
         try {
             new SocketClient(cloudHost, cloudPort).send(message);
             AppLog.info("CLOUD", "백업 전송: " + message.type + " / " + message.clientId);
-        } catch (Exception e) {
+        } catch (vending.util.VendingException e) {
             AppLog.warn("CLOUD", "백업 실패: " + e.getMessage());
         }
     }

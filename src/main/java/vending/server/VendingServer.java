@@ -3,6 +3,7 @@ package vending.server;
 import vending.protocol.MessageType;
 import vending.protocol.VendingMessage;
 import vending.util.AppLog;
+import vending.util.VendingException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,9 +16,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/**
- * TCP 서버. Client/Peer/Backup 요청 처리.
- */
+// 소켓서버기능
 public class VendingServer implements Runnable {
 
     private final ServerRole role;
@@ -51,28 +50,48 @@ public class VendingServer implements Runnable {
     }
 
     private void handle(Socket socket) {
-        try (Socket s = socket) {
+        try {
             BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
             String line = reader.readLine();
             if (line == null || line.isBlank()) {
                 return;
             }
 
-            VendingMessage message = VendingMessage.fromJson(line.trim());
-            VendingMessage response = process(message);
-
+            VendingMessage response = process(VendingMessage.fromJson(line.trim()));
             if (response != null) {
-                OutputStream out = s.getOutputStream();
-                out.write((response.toJson() + "\n").getBytes(StandardCharsets.UTF_8));
-                out.flush();
+                writeResponse(socket, response);
             }
+        } catch (VendingException e) {
+            AppLog.error("SERVER", e.getMessage(), e);
+            writeError(socket, e.getMessage());
         } catch (Exception e) {
             AppLog.error("SERVER", "처리 오류", e);
+            writeError(socket, "서버 처리 오류");
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                AppLog.warn("SERVER", "소켓 종료 실패: " + e.getMessage());
+            }
         }
     }
 
-    private VendingMessage process(VendingMessage message) throws IOException {
+    private void writeResponse(Socket socket, VendingMessage message) throws IOException {
+        OutputStream out = socket.getOutputStream();
+        out.write((message.toJson() + "\n").getBytes(StandardCharsets.UTF_8));
+        out.flush();
+    }
+
+    private void writeError(Socket socket, String message) {
+        try {
+            writeResponse(socket, VendingMessage.error(message));
+        } catch (IOException e) {
+            AppLog.warn("SERVER", "오류 응답 전송 실패: " + e.getMessage());
+        }
+    }
+
+    private VendingMessage process(VendingMessage message) throws VendingException {
         switch (message.type) {
             case HEARTBEAT:
                 if (role == ServerRole.BACKUP && backupMonitor != null
@@ -93,6 +112,14 @@ public class VendingServer implements Runnable {
             case QUERY_SALES:
                 return VendingMessage.payloadResponse(MessageType.SALES_SUMMARY, store.buildSalesSummaryPayload());
 
+            case QUERY_REMOTE:
+                return VendingMessage.payloadResponse(
+                        MessageType.REMOTE_COMMAND_LIST,
+                        store.drainRemoteCommands(message.clientId));
+
+            case SNAPSHOT_REQUEST:
+                return VendingMessage.snapshot(role.name(), store.exportSnapshot());
+
             case SYNC:
                 if (message.payload != null && !message.payload.isBlank()) {
                     String innerJson = VendingMessage.decodeB64(message.payload);
@@ -102,30 +129,41 @@ public class VendingServer implements Runnable {
                 }
                 return null;
 
+            case SNAPSHOT:
+                store.apply(message);
+                return null;
+
+            case REMOTE_DRINK_SET:
+                store.apply(message);
+                forwardIfServer(message);
+                return VendingMessage.payloadResponse(MessageType.REMOTE_COMMAND_LIST, "OK");
+
             default:
                 store.apply(message);
-
-                if (role == ServerRole.SERVER1 || role == ServerRole.SERVER2) {
-                    if (peerSync != null) {
-                        peerSync.forward(message);
-                    }
-                }
-
-                if (role == ServerRole.BACKUP && backupMonitor != null && backupMonitor.isFailoverMode()) {
-                    if (failoverLogged.compareAndSet(false, true)) {
-                        System.out.println("[BACKUP] Failover 활성 - Server1/2 대체 처리 중");
-                    }
-                }
-
-                if (role == ServerRole.CLOUD) {
-                    System.out.println("[CLOUD] 백업 수신: " + message.type + " / " + message.clientId);
-                }
-
-                if (message.type == MessageType.STOCK_ALERT) {
-                    System.out.println("[ALERT] " + message.clientId + " / "
-                            + message.drink + " 재고 " + message.remaining);
-                }
+                forwardIfServer(message);
+                logServerSideEvent(message);
                 return null;
+        }
+    }
+
+    private void logServerSideEvent(VendingMessage message) {
+        if (role == ServerRole.BACKUP && backupMonitor != null && backupMonitor.isFailoverMode()) {
+            if (failoverLogged.compareAndSet(false, true)) {
+                System.out.println("[BACKUP] Failover 활성");
+            }
+        }
+        if (role == ServerRole.CLOUD) {
+            System.out.println("[CLOUD] " + message.type + " / " + message.clientId);
+        }
+        if (message.type == MessageType.STOCK_ALERT) {
+            System.out.println("[ALERT] " + message.clientId + " / "
+                    + message.drink + " 재고 " + message.remaining);
+        }
+    }
+
+    private void forwardIfServer(VendingMessage message) {
+        if ((role == ServerRole.SERVER1 || role == ServerRole.SERVER2) && peerSync != null) {
+            peerSync.forward(message);
         }
     }
 }

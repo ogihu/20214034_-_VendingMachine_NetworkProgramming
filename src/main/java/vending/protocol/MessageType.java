@@ -1,8 +1,5 @@
 package vending.protocol;
 
-/**
- * 클라이언트-서버 간 메시지 종류.
- */
 public enum MessageType {
     SALE,
     STOCK,
@@ -17,5 +14,12 @@ public enum MessageType {
     QUERY_ALERTS,
     QUERY_SALES,
     ALERT_LIST,
-    SALES_SUMMARY
+    SALES_SUMMARY,
+    REMOTE_DRINK_SET,
+    REMOTE_DRINK_UPDATE,
+    QUERY_REMOTE,
+    REMOTE_COMMAND_LIST,
+    SNAPSHOT_REQUEST,
+    SNAPSHOT,
+    ERROR
 }

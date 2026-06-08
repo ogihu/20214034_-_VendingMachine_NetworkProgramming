@@ -4,9 +4,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 판매 음료 8종과 각 재고 리스트를 묶어서 관리한다.
- */
+// 음료카탈로그기능
 public class DrinkCatalog implements Serializable {
 
     private static final long serialVersionUID = 1L;

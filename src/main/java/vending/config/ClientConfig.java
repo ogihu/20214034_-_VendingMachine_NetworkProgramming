@@ -4,14 +4,13 @@ import vending.util.AppLog;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Properties;
 
-/**
- * config/clientX.properties 로 Client/Server 접속 정보 로드.
- */
 public final class ClientConfig {
 
     private ClientConfig() {
@@ -25,7 +24,7 @@ public final class ClientConfig {
             if (in == null) {
                 return;
             }
-            props.load(in);
+            props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
             apply(props);
         } catch (Exception e) {
             AppLog.error("CONFIG", "로드 실패: " + path, e);

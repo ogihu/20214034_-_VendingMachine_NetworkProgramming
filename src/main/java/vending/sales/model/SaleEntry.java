@@ -3,9 +3,7 @@ package vending.sales.model;
 import java.io.Serializable;
 import java.time.LocalDate;
 
-/**
- * 판매 1건 기록.
- */
+// 매출엔트리
 public class SaleEntry implements Serializable, Comparable<SaleEntry> {
 
     private static final long serialVersionUID = 1L;

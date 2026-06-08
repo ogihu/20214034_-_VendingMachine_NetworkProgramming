@@ -3,9 +3,7 @@ package vending.server;
 import vending.network.SocketClient;
 import vending.protocol.VendingMessage;
 
-/**
- * Cloud 노드: Server1 연결 확인 + 로컬 store 백업.
- */
+// 클라우드연동기능
 public class CloudForwarder extends Thread {
 
     private final String targetHost;

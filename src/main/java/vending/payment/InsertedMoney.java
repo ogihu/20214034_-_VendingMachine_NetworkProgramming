@@ -1,9 +1,6 @@
 package vending.payment;
 
-/**
- * 이번 거래에 투입된 화폐를 동적 배열로 관리한다.
- * 반환 또는 판매 종료 시 release()로 해제한다.
- */
+// 투입화폐기능
 public class InsertedMoney {
 
     private int[] units;
@@ -30,7 +27,7 @@ public class InsertedMoney {
     public int billTotal() {
         int sum = 0;
         for (int i = 0; i < size; i++) {
-            if (units[i] >= 500) {
+            if (units[i] == 1000) {
                 sum += units[i];
             }
         }
@@ -45,7 +42,14 @@ public class InsertedMoney {
         return units[index];
     }
 
-    /** 동적 할당 해제 */
+    public int[] toArray() {
+        int[] copy = new int[size];
+        if (size > 0) {
+            System.arraycopy(units, 0, copy, 0, size);
+        }
+        return copy;
+    }
+
     public void release() {
         units = null;
         size = 0;
@@ -55,7 +59,6 @@ public class InsertedMoney {
         return units == null;
     }
 
-    /** 새 거래 시작 */
     public void reset() {
         if (units == null) {
             units = new int[4];
@@ -70,6 +73,8 @@ public class InsertedMoney {
         if (needed <= units.length) {
             return;
         }
+
+        // 배열 확장
         int[] bigger = new int[units.length * 2];
         System.arraycopy(units, 0, bigger, 0, size);
         units = bigger;

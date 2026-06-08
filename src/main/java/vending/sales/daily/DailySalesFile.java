@@ -12,10 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * 일별 매출 파일 읽기/쓰기.
- * 저장 경로: data/sales/daily/yyyy-MM-dd.sales
- */
+// 일별매출기능
 public class DailySalesFile {
 
     public Path filePath(LocalDate date) {

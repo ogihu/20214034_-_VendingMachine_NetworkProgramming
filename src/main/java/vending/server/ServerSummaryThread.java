@@ -2,11 +2,9 @@ package vending.server;
 
 import vending.protocol.VendingMessage;
 
-import java.io.IOException;
+import vending.util.AppLog;
+import vending.util.VendingException;
 
-/**
- * Server1/2 에서 주기적으로 매출·재고 요약 출력.
- */
 public class ServerSummaryThread extends Thread {
 
     private final ServerDataStore store;
@@ -23,14 +21,18 @@ public class ServerSummaryThread extends Thread {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 Thread.sleep(30000);
-                System.out.println("\n===== [" + serverId + "] 집계 =====");
-                System.out.println(store.buildSalesSummaryPayload());
+                AppLog.info("SUMMARY", "===== [" + serverId + "] 집계 =====");
+                for (String line : store.buildSalesSummaryPayload().split("\n")) {
+                    if (!line.isBlank()) {
+                        AppLog.info("SUMMARY", line);
+                    }
+                }
                 store.writeSummarySnapshot();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
-            } catch (IOException e) {
-                System.err.println("[SUMMARY] 저장 실패: " + e.getMessage());
+            } catch (VendingException e) {
+                AppLog.warn("SUMMARY", e.getMessage());
             }
         }
     }

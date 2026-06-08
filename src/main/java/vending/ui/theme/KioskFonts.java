@@ -3,9 +3,7 @@ package vending.ui.theme;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 
-/**
- * 키오스크 폰트 설정. Windows에서는 맑은 고딕 우선.
- */
+// 폰트테마
 public final class KioskFonts {
 
     private static final String FAMILY = pickFamily();

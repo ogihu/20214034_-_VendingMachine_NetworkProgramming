@@ -1,14 +1,13 @@
 package vending.server;
 
 import vending.util.AppLog;
+import vending.util.ConsoleEncoding;
 
-/**
- * Server1 / Server2 / Backup / Cloud 실행 진입점.
- * Railway 배포 시 PORT 환경변수를 자동 사용.
- */
+// 서버실행기능
 public class ServerMain {
 
     public static void main(String[] args) {
+        ConsoleEncoding.configureUtf8();
         ServerRole role = ServerRole.valueOf(
                 System.getenv().getOrDefault("SERVER_ROLE",
                         System.getProperty("server.role", "SERVER1")));
@@ -20,14 +19,14 @@ public class ServerMain {
         PeerSyncManager peerSync = null;
         BackupHealthMonitor backupMonitor = null;
 
-        String backupHost = envOrProp("BACKUP_SYNC_HOST", "backup.sync.host", "127.0.0.1");
+        String backupHost = envOrProp("BACKUP_SYNC_HOST", "backup.sync.host", "");
         int backupPort = Integer.parseInt(envOrProp("BACKUP_SYNC_PORT", "backup.sync.port", "9092"));
 
         if (role == ServerRole.SERVER1 || role == ServerRole.SERVER2) {
             String peerHost = envOrProp("PEER_HOST", "peer.host", "127.0.0.1");
             int peerPort = Integer.parseInt(envOrProp("PEER_PORT", "peer.port",
                     role == ServerRole.SERVER1 ? "9091" : "9090"));
-            peerSync = new PeerSyncManager(role.name(), peerHost, peerPort, backupHost, backupPort);
+            peerSync = new PeerSyncManager(role.name(), peerHost, peerPort, backupHost, backupPort, store);
             peerSync.start();
 
             ServerSummaryThread summary = new ServerSummaryThread(store, role.name());
@@ -57,7 +56,7 @@ public class ServerMain {
         t.start();
     }
 
-    /** Railway는 PORT 환경변수 제공 */
+    // 포트설정
     private static int resolvePort(ServerRole role) {
         String railwayPort = System.getenv("PORT");
         if (railwayPort != null && !railwayPort.isBlank()) {

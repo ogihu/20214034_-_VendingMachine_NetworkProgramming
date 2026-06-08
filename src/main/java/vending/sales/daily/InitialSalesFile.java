@@ -10,13 +10,16 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 과제 요구: 사전에 저장해 둔 초기 매출 파일과 현재 매출 연동.
- * 경로: data/sales/initial.sales
- */
+// 초기매출기능
 public class InitialSalesFile {
 
-    private final Path path = DataPaths.ROOT.resolve("sales").resolve("initial.sales");
+    private final Path path;
+    private final String clientId;
+
+    public InitialSalesFile(String clientId) {
+        this.clientId = clientId == null || clientId.isBlank() ? "Client1" : clientId;
+        this.path = DataPaths.SALES_DAILY.getParent().resolve("initial.sales");
+    }
 
     public void ensureSample() throws IOException {
         if (Files.exists(path)) {
@@ -24,9 +27,9 @@ public class InitialSalesFile {
         }
         Files.createDirectories(path.getParent());
         String sample = ""
-                + "2026-01-15|Client1|믹스커피|2|400\n"
-                + "2026-01-15|Client1|물|1|450\n"
-                + "2026-02-10|Client2|캔커피|3|1500\n";
+                + "2026-01-15|" + clientId + "|믹스커피|2|400\n"
+                + "2026-01-15|" + clientId + "|생수|1|450\n"
+                + "2026-02-10|" + clientId + "|캔커피|3|1500\n";
         Files.writeString(path, sample, StandardCharsets.UTF_8);
     }
 

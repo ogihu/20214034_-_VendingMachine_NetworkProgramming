@@ -6,11 +6,12 @@ import vending.kiosk.KioskService;
 import vending.ui.theme.KioskColors;
 import vending.ui.theme.KioskFonts;
 import vending.ui.theme.UiKit;
+import vending.ui.widget.ClockLabel;
+import vending.ui.widget.VendingDialog;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
@@ -18,14 +19,15 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
 import java.text.NumberFormat;
 import java.util.Locale;
 
-/**
- * 이미지 레퍼런스와 같은 흐름의 고객 결제 화면.
- * 상품 선택 → 화폐 투입 → 결제하기
- */
 public class CustomerPanel extends JPanel {
 
     private static final Color[] THUMB_COLORS = {
@@ -41,105 +43,273 @@ public class CustomerPanel extends JPanel {
 
     private final KioskService service;
     private final NumberFormat won = NumberFormat.getNumberInstance(Locale.KOREA);
+    private final Runnable openAdmin;
 
     private final JLabel insertedLabel = new JLabel("0원", SwingConstants.LEFT);
+    private final JLabel insertedDetailLabel = new JLabel("투입 내역 없음", SwingConstants.LEFT);
+    private final JLabel selectedProductLabel = new JLabel("상품을 선택해주세요", SwingConstants.CENTER);
     private final JLabel selectedCountLabel = new JLabel("0개", SwingConstants.LEFT);
     private final JLabel selectedPriceLabel = new JLabel("0원", SwingConstants.LEFT);
-    private final JLabel serverStatusLabel = new JLabel("서버 연결: 확인 중");
-    private final JLabel changeStatusLabel = new JLabel("거스름돈: 확인 중");
-    private final JLabel hintLabel = new JLabel(" ", SwingConstants.CENTER);
+    private final JLabel expectedChangeLabel = new JLabel("0원", SwingConstants.LEFT);
+    private final JLabel hintLabel = new JLabel(" ", SwingConstants.LEFT);
+    private final JButton resetBtn = UiKit.darkButton("전체 금액 취소");
+    private final JButton returnBtn = UiKit.outlineButton("투입금 반환");
+    private final JButton payBtn = UiKit.primaryButton("결제하기");
+    private final JButton homeBtn = UiKit.outlineButton("처음으로");
 
     private final ProductCardPanel[] cards;
+    private final BannerCarouselPanel bannerCarousel = new BannerCarouselPanel();
     private int selectedIndex = -1;
+    private int adminTapCount;
+    private long lastAdminTapMs;
 
-    public CustomerPanel(KioskService service) {
+    public CustomerPanel(KioskService service, Runnable openAdmin) {
         this.service = service;
+        this.openAdmin = openAdmin;
         setBackground(KioskColors.BG);
-        setLayout(new BorderLayout(0, 14));
-        setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
+        setLayout(new BorderLayout(0, 12));
+        setBorder(BorderFactory.createEmptyBorder(16, 20, 12, 20));
+        setPreferredSize(new Dimension(1040, 780));
 
         DrinkCatalog catalog = service.getCatalog();
         int n = catalog.drinkCount();
         cards = new ProductCardPanel[n];
 
         add(buildHeader(), BorderLayout.NORTH);
-        add(buildSummary(), BorderLayout.PAGE_START);
-        add(buildProductArea(catalog, n), BorderLayout.CENTER);
-        add(buildBottom(), BorderLayout.SOUTH);
+        add(buildMainContent(catalog, n), BorderLayout.CENTER);
+        add(buildFooter(), BorderLayout.SOUTH);
     }
 
     private JPanel buildHeader() {
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
 
-        JLabel title = new JLabel("SMART VENDING MACHINE");
+        JLabel title = new JLabel("SMART VENDING");
         title.setFont(KioskFonts.title());
-        title.setForeground(KioskColors.TEXT);
+        title.setForeground(KioskColors.NAVY);
+        title.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        title.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                long now = System.currentTimeMillis();
+                if (now - lastAdminTapMs > 2500) {
+                    adminTapCount = 0;
+                }
+                lastAdminTapMs = now;
+                adminTapCount++;
+                if (adminTapCount >= 5) {
+                    adminTapCount = 0;
+                    openAdmin.run();
+                }
+            }
+        });
 
-        JPanel status = new JPanel(new FlowLayout(FlowLayout.RIGHT, 14, 0));
-        status.setOpaque(false);
-        styleStatus(serverStatusLabel, KioskColors.SUBTEXT);
-        styleStatus(changeStatusLabel, KioskColors.SUBTEXT);
-        status.add(serverStatusLabel);
-        status.add(changeStatusLabel);
+        JLabel mode = new JLabel("현금/상품 선택");
+        mode.setFont(KioskFonts.small());
+        mode.setForeground(KioskColors.SUBTEXT);
 
-        header.add(title, BorderLayout.WEST);
-        header.add(status, BorderLayout.EAST);
+        JPanel titleBox = new JPanel(new GridLayout(2, 1, 0, 2));
+        titleBox.setOpaque(false);
+        titleBox.add(title);
+        titleBox.add(mode);
+
+        header.add(titleBox, BorderLayout.WEST);
+        header.add(new ClockLabel(), BorderLayout.EAST);
         return header;
     }
 
-    private void styleStatus(JLabel label, Color color) {
-        label.setFont(KioskFonts.small());
-        label.setForeground(color);
-        label.setIcon(new DotIcon(KioskColors.GREEN));
-        label.setIconTextGap(6);
+    private JPanel buildMainContent(DrinkCatalog catalog, int n) {
+        JPanel main = new JPanel(new BorderLayout(16, 0));
+        main.setOpaque(false);
+        main.add(buildProductArea(catalog, n), BorderLayout.CENTER);
+        main.add(buildSidePanel(), BorderLayout.EAST);
+        return main;
     }
 
-    private JPanel buildSummary() {
-        JPanel box = new JPanel(new BorderLayout(16, 0));
-        box.setBackground(KioskColors.CARD);
-        box.setBorder(UiKit.cardBorder());
+    private JPanel buildProductArea(DrinkCatalog catalog, int n) {
+        JPanel wrap = new JPanel(new BorderLayout(0, 12));
+        wrap.setBackground(KioskColors.CARD);
+        wrap.setBorder(BorderFactory.createCompoundBorder(
+                UiKit.cardBorder(),
+                BorderFactory.createEmptyBorder(20, 24, 20, 24)));
+
+        wrap.add(bannerCarousel, BorderLayout.NORTH);
+
+        JPanel grid = new JPanel(new GridLayout(2, 4, 12, 14));
+        grid.setOpaque(false);
+        for (int i = 0; i < n; i++) {
+            DrinkInfo d = catalog.getDrink(i);
+            cards[i] = new ProductCardPanel(i, d.getName(), d.getPrice(),
+                    THUMB_COLORS[i % THUMB_COLORS.length], this::selectProduct);
+            grid.add(cards[i]);
+        }
+
+        homeBtn.setPreferredSize(new Dimension(110, 36));
+        homeBtn.addActionListener(e -> resetSelection());
+
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        bottom.setOpaque(false);
+        bottom.add(homeBtn);
+
+        JPanel center = new JPanel(new BorderLayout(0, 10));
+        center.setOpaque(false);
+        center.add(grid, BorderLayout.CENTER);
+        center.add(bottom, BorderLayout.SOUTH);
+
+        wrap.add(center, BorderLayout.CENTER);
+        return wrap;
+    }
+
+    private JPanel buildSidePanel() {
+        JPanel side = new JPanel(new BorderLayout(0, 14));
+        side.setOpaque(false);
+        side.setPreferredSize(new Dimension(280, 560));
+        side.add(buildAmountPanel(), BorderLayout.NORTH);
+        side.add(buildSelectedPanel(), BorderLayout.CENTER);
+        side.add(buildMoneyPanel(), BorderLayout.SOUTH);
+        return side;
+    }
+
+    private JPanel buildAmountPanel() {
+        JPanel box = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(KioskColors.NAVY);
+                g2.fill(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 14, 14));
+                g2.dispose();
+            }
+        };
+        box.setOpaque(false);
+        box.setBorder(BorderFactory.createEmptyBorder(22, 24, 22, 24));
+        box.setPreferredSize(new Dimension(10, 120));
 
         insertedLabel.setFont(KioskFonts.amount());
-        insertedLabel.setForeground(KioskColors.BLUE);
+        insertedLabel.setForeground(Color.WHITE);
+        insertedDetailLabel.setFont(KioskFonts.small());
+        insertedDetailLabel.setForeground(new Color(220, 230, 245));
 
-        selectedCountLabel.setFont(KioskFonts.bodyBold());
-        selectedPriceLabel.setFont(KioskFonts.bodyBold());
+        JLabel title = new JLabel("투입 금액");
+        title.setFont(KioskFonts.small());
+        title.setForeground(new Color(200, 215, 235));
 
-        JPanel left = new JPanel(new BorderLayout());
-        left.setOpaque(false);
-        left.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 8));
-        left.add(labeled("투입 금액", insertedLabel), BorderLayout.CENTER);
+        JPanel center = new JPanel(new BorderLayout(0, 4));
+        center.setOpaque(false);
+        center.add(insertedLabel, BorderLayout.NORTH);
+        center.add(insertedDetailLabel, BorderLayout.CENTER);
 
-        JPanel mid = new JPanel(new GridLayout(2, 2, 10, 2));
-        mid.setOpaque(false);
-        mid.setBorder(BorderFactory.createEmptyBorder(14, 8, 14, 8));
-        mid.add(labelOf("선택한 상품"));
-        mid.add(selectedCountLabel);
-        mid.add(labelOf("상품 금액"));
-        mid.add(selectedPriceLabel);
-
-        JButton resetBtn = UiKit.outlineButton("금액 초기화");
-        resetBtn.setPreferredSize(new Dimension(108, 34));
-        resetBtn.addActionListener(e -> onResetMoney());
-
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 24));
-        right.setOpaque(false);
-        right.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 14));
-        right.add(resetBtn);
-
-        box.add(left, BorderLayout.CENTER);
-        box.add(mid, BorderLayout.EAST);
-        box.add(right, BorderLayout.LINE_END);
+        box.add(title, BorderLayout.NORTH);
+        box.add(center, BorderLayout.CENTER);
         return box;
     }
 
-    private JPanel labeled(String title, JLabel value) {
-        JPanel p = new JPanel(new BorderLayout(0, 2));
-        p.setOpaque(false);
-        p.add(labelOf(title), BorderLayout.NORTH);
-        p.add(value, BorderLayout.CENTER);
-        return p;
+    private JPanel buildSelectedPanel() {
+        JPanel box = new JPanel(new BorderLayout(0, 10));
+        box.setBackground(KioskColors.CARD);
+        box.setBorder(BorderFactory.createCompoundBorder(
+                UiKit.cardBorder(),
+                BorderFactory.createEmptyBorder(18, 18, 18, 18)));
+
+        selectedProductLabel.setFont(KioskFonts.bodyBold());
+        selectedProductLabel.setForeground(KioskColors.TEXT);
+
+        JPanel info = new JPanel(new GridLayout(3, 2, 8, 4));
+        info.setOpaque(false);
+        info.add(labelOf("선택 수량"));
+        info.add(selectedCountLabel);
+        info.add(labelOf("상품 금액"));
+        info.add(selectedPriceLabel);
+        info.add(labelOf("예상 거스름돈"));
+        info.add(expectedChangeLabel);
+        selectedCountLabel.setFont(KioskFonts.bodyBold());
+        selectedPriceLabel.setFont(KioskFonts.bodyBold());
+        expectedChangeLabel.setFont(KioskFonts.bodyBold());
+
+        box.add(selectedProductLabel, BorderLayout.NORTH);
+        box.add(info, BorderLayout.CENTER);
+        return box;
+    }
+
+    private JPanel buildMoneyPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 12));
+        panel.setBackground(KioskColors.CARD);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                UiKit.cardBorder(),
+                BorderFactory.createEmptyBorder(18, 18, 18, 18)));
+
+        JLabel moneyTitle = new JLabel("화폐 투입");
+        moneyTitle.setFont(KioskFonts.section());
+
+        JLabel limit = new JLabel("<html>10/50/100/500/1000원 · 최대 7,000원</html>");
+        limit.setFont(KioskFonts.small());
+        limit.setForeground(KioskColors.SUBTEXT);
+
+        JPanel moneyGrid = new JPanel(new GridLayout(3, 2, 8, 8));
+        moneyGrid.setOpaque(false);
+        moneyGrid.add(coinBtn(10));
+        moneyGrid.add(coinBtn(50));
+        moneyGrid.add(coinBtn(100));
+        moneyGrid.add(coinBtn(500));
+        moneyGrid.add(billBtn(1000));
+
+        resetBtn.setPreferredSize(new Dimension(240, 42));
+        resetBtn.addActionListener(e -> onResetMoney());
+
+        returnBtn.setPreferredSize(new Dimension(115, 48));
+        returnBtn.addActionListener(e -> onReturn());
+
+        payBtn.setPreferredSize(new Dimension(115, 48));
+        payBtn.addActionListener(e -> onPay());
+
+        JPanel actions = new JPanel(new GridLayout(1, 2, 8, 0));
+        actions.setOpaque(false);
+        actions.add(returnBtn);
+        actions.add(payBtn);
+
+        JPanel top = new JPanel(new BorderLayout(0, 8));
+        top.setOpaque(false);
+        top.add(moneyTitle, BorderLayout.NORTH);
+        top.add(limit, BorderLayout.CENTER);
+        top.add(moneyGrid, BorderLayout.SOUTH);
+
+        panel.add(top, BorderLayout.NORTH);
+        panel.add(resetBtn, BorderLayout.CENTER);
+        panel.add(actions, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    private JPanel buildFooter() {
+        JPanel footer = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(KioskColors.FOOTER);
+                g2.fill(new RoundRectangle2D.Float(0, 0, getWidth(), getHeight(), 10, 10));
+                g2.dispose();
+            }
+        };
+        footer.setOpaque(false);
+        footer.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+        footer.setPreferredSize(new Dimension(10, 48));
+
+        hintLabel.setFont(KioskFonts.small());
+        hintLabel.setForeground(new Color(220, 225, 235));
+
+        JLabel guide = new JLabel("상품을 선택하고 금액을 투입한 후 결제 버튼을 눌러주세요.");
+        guide.setFont(KioskFonts.small());
+        guide.setForeground(new Color(190, 198, 210));
+
+        JLabel contact = new JLabel("사용 문의 010-2571-0884");
+        contact.setFont(KioskFonts.small());
+        contact.setForeground(new Color(190, 198, 210));
+        contact.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        footer.add(guide, BorderLayout.WEST);
+        footer.add(hintLabel, BorderLayout.CENTER);
+        footer.add(contact, BorderLayout.EAST);
+        return footer;
     }
 
     private JLabel labelOf(String text) {
@@ -149,91 +319,15 @@ public class CustomerPanel extends JPanel {
         return l;
     }
 
-    private JPanel buildProductArea(DrinkCatalog catalog, int n) {
-        JPanel wrap = new JPanel(new BorderLayout(0, 8));
-        wrap.setOpaque(false);
-
-        JLabel section = new JLabel("상품 선택");
-        section.setFont(KioskFonts.section());
-        section.setForeground(KioskColors.TEXT);
-
-        JPanel grid = new JPanel(new GridLayout(2, 4, 12, 12));
-        grid.setOpaque(false);
-
-        for (int i = 0; i < n; i++) {
-            DrinkInfo d = catalog.getDrink(i);
-            int idx = i;
-            cards[i] = new ProductCardPanel(i, d.getName(), d.getPrice(), THUMB_COLORS[i % THUMB_COLORS.length],
-                    index -> selectProduct(index));
-            grid.add(cards[i]);
-        }
-
-        wrap.add(section, BorderLayout.NORTH);
-        wrap.add(grid, BorderLayout.CENTER);
-        return wrap;
-    }
-
-    private JPanel buildBottom() {
-        JPanel bottom = new JPanel(new BorderLayout(0, 10));
-        bottom.setOpaque(false);
-
-        JLabel moneyTitle = new JLabel("화폐 투입");
-        moneyTitle.setFont(KioskFonts.section());
-
-        JLabel limit = new JLabel("최대 투입 가능 금액: 7,000원");
-        limit.setFont(KioskFonts.small());
-        limit.setForeground(KioskColors.SUBTEXT);
-
-        JPanel moneyRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        moneyRow.setOpaque(false);
-        moneyRow.add(coinBtn(10));
-        moneyRow.add(coinBtn(50));
-        moneyRow.add(coinBtn(100));
-        moneyRow.add(coinBtn(500));
-        moneyRow.add(billBtn(1000));
-
-        JPanel moneyBox = new JPanel(new BorderLayout(0, 8));
-        moneyBox.setOpaque(false);
-        moneyBox.add(moneyTitle, BorderLayout.NORTH);
-        moneyBox.add(limit, BorderLayout.CENTER);
-        moneyBox.add(moneyRow, BorderLayout.SOUTH);
-
-        JButton returnBtn = UiKit.outlineButton("화폐 반환");
-        returnBtn.setPreferredSize(new Dimension(140, 46));
-        returnBtn.addActionListener(e -> onReturn());
-
-        JButton payBtn = UiKit.primaryButton("결제하기");
-        payBtn.setPreferredSize(new Dimension(160, 46));
-        payBtn.addActionListener(e -> onPay());
-
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        actions.setOpaque(false);
-        actions.add(returnBtn);
-        actions.add(payBtn);
-
-        hintLabel.setFont(KioskFonts.small());
-        hintLabel.setForeground(KioskColors.RED);
-
-        JLabel guide = new JLabel("상품을 선택하고 금액을 투입한 후 결제 버튼을 눌러주세요.");
-        guide.setFont(KioskFonts.small());
-        guide.setForeground(KioskColors.SUBTEXT);
-        guide.setHorizontalAlignment(SwingConstants.CENTER);
-
-        bottom.add(moneyBox, BorderLayout.NORTH);
-        bottom.add(actions, BorderLayout.CENTER);
-        bottom.add(hintLabel, BorderLayout.SOUTH);
-        bottom.add(guide, BorderLayout.PAGE_END);
-        return bottom;
-    }
-
     private JButton coinBtn(int unit) {
-        JButton btn = UiKit.moneyButton(won.format(unit), false);
+        JButton btn = UiKit.accentMoneyButton("+" + won.format(unit) + "원");
         btn.addActionListener(e -> insert(unit));
         return btn;
     }
 
     private JButton billBtn(int unit) {
-        JButton btn = UiKit.moneyButton(won.format(unit), true);
+        JButton btn = UiKit.accentMoneyButton("+" + won.format(unit) + "원");
+        btn.setPreferredSize(new Dimension(210, 44));
         btn.addActionListener(e -> insert(unit));
         return btn;
     }
@@ -254,6 +348,12 @@ public class CustomerPanel extends JPanel {
         refresh();
     }
 
+    private void resetSelection() {
+        selectedIndex = -1;
+        showHint(" ");
+        refresh();
+    }
+
     private void onResetMoney() {
         if (service.insertedTotal() <= 0) {
             showHint("초기화할 투입 금액이 없습니다.");
@@ -261,12 +361,25 @@ public class CustomerPanel extends JPanel {
         }
         String msg = service.returnInsertedMoney();
         showHint(msg.contains("완료") ? "투입 금액이 초기화되었습니다." : msg);
+        if (msg.contains("완료")) {
+            VendingDialog.showResult(this, "투입금 반환 완료", msg, true);
+        }
         refresh();
     }
 
     private void onReturn() {
+        if (service.insertedTotal() <= 0) {
+            showHint("반환할 금액이 없습니다.");
+            refresh();
+            return;
+        }
         String msg = service.returnInsertedMoney();
         showHint(msg);
+        if (msg.contains("완료")) {
+            VendingDialog.showResult(this, "화폐 반환 완료", msg, true);
+        } else {
+            VendingDialog.showResult(this, "화폐 반환 실패", msg, false);
+        }
         refresh();
     }
 
@@ -275,13 +388,29 @@ public class CustomerPanel extends JPanel {
             showHint("먼저 상품을 선택해주세요.");
             return;
         }
+        if (service.isSoldOut(selectedIndex)) {
+            showHint("품절입니다.");
+            selectedIndex = -1;
+            refresh();
+            return;
+        }
+        if (!service.canBuy(selectedIndex)) {
+            if (!service.canAfford(selectedIndex)) {
+                showHint("금액이 부족합니다.");
+            } else {
+                showHint("거스름돈이 부족합니다.");
+            }
+            refresh();
+            return;
+        }
         String msg = service.buyDrink(selectedIndex);
         if (msg.startsWith("판매 완료")) {
             showHint(" ");
             selectedIndex = -1;
-            JOptionPane.showMessageDialog(this, msg, "결제 완료", JOptionPane.INFORMATION_MESSAGE);
+            VendingDialog.showResult(this, "결제 완료", msg, true);
         } else {
             showHint(msg);
+            VendingDialog.showResult(this, "결제 실패", msg, false);
         }
         refresh();
     }
@@ -289,14 +418,19 @@ public class CustomerPanel extends JPanel {
     public void refresh() {
         DrinkCatalog catalog = service.getCatalog();
         insertedLabel.setText(won.format(service.insertedTotal()) + "원");
+        insertedDetailLabel.setText(service.insertedSummary());
 
         if (selectedIndex >= 0 && !service.isSoldOut(selectedIndex)) {
             DrinkInfo d = catalog.getDrink(selectedIndex);
+            selectedProductLabel.setText(d.getName());
             selectedCountLabel.setText("1개");
             selectedPriceLabel.setText(won.format(d.getPrice()) + "원");
+            expectedChangeLabel.setText(won.format(service.changeAmountFor(selectedIndex)) + "원");
         } else {
+            selectedProductLabel.setText("상품을 선택해주세요");
             selectedCountLabel.setText("0개");
             selectedPriceLabel.setText("0원");
+            expectedChangeLabel.setText("0원");
             if (selectedIndex >= 0 && service.isSoldOut(selectedIndex)) {
                 selectedIndex = -1;
             }
@@ -314,44 +448,34 @@ public class CustomerPanel extends JPanel {
             );
         }
 
-        updateStatusLabels();
+        updateButtons();
     }
 
-    private void updateStatusLabels() {
-        serverStatusLabel.setText("서버 연결: " + service.getServerStatusText());
-        changeStatusLabel.setText("거스름돈: " + service.getChangeStatusText());
+    private void updateButtons() {
+        boolean hasMoney = service.insertedTotal() > 0;
+        boolean hasSelection = selectedIndex >= 0 && !service.isSoldOut(selectedIndex);
+        boolean canAfford = hasSelection && service.canAfford(selectedIndex);
+        boolean canPay = hasSelection && service.canBuy(selectedIndex);
 
-        Color dot = service.isChangeOk() ? KioskColors.GREEN : KioskColors.RED;
-        serverStatusLabel.setIcon(new DotIcon(service.isServerOk() ? KioskColors.GREEN : KioskColors.RED));
-        changeStatusLabel.setIcon(new DotIcon(dot));
+        resetBtn.setEnabled(hasMoney);
+        returnBtn.setEnabled(hasMoney);
+        payBtn.setEnabled(canPay);
+        if (!hasSelection) {
+            payBtn.setText("상품 선택");
+        } else if (!canAfford) {
+            payBtn.setText("금액 부족");
+        } else if (!canPay) {
+            payBtn.setText("거스름돈 부족");
+        } else {
+            payBtn.setText("결제하기");
+        }
+
+        if (hasSelection && canAfford && !canPay) {
+            showHint("거스름돈이 부족합니다. 화폐를 보충하거나 반환을 눌러주세요.");
+        }
     }
 
     public void showHint(String text) {
         hintLabel.setText(text == null || text.isBlank() ? " " : text);
-    }
-
-    /** 상태 표시용 작은 원 */
-    private static class DotIcon implements javax.swing.Icon {
-        private final Color color;
-
-        DotIcon(Color color) {
-            this.color = color;
-        }
-
-        @Override
-        public void paintIcon(java.awt.Component c, Graphics g, int x, int y) {
-            g.setColor(color);
-            g.fillOval(x, y + 2, 8, 8);
-        }
-
-        @Override
-        public int getIconWidth() {
-            return 10;
-        }
-
-        @Override
-        public int getIconHeight() {
-            return 12;
-        }
     }
 }

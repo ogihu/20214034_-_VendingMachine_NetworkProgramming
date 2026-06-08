@@ -1,10 +1,8 @@
 package vending.thread;
 
 import vending.kiosk.KioskService;
+import vending.network.ActiveServerResolver;
 
-/**
- * 서버 알림·집계를 주기적으로 조회하는 스레드.
- */
 public class AlertPollThread extends Thread {
 
     private final KioskService service;
@@ -18,6 +16,7 @@ public class AlertPollThread extends Thread {
     public void run() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
+                ActiveServerResolver.refresh();
                 service.pollServerInfo();
                 Thread.sleep(15000);
             } catch (InterruptedException e) {

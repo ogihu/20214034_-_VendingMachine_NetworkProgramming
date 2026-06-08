@@ -1,5 +1,6 @@
 package vending.ui.boot;
 
+import vending.ui.theme.AppIcon;
 import vending.ui.theme.KioskColors;
 import vending.ui.theme.KioskFonts;
 
@@ -18,9 +19,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.geom.RoundRectangle2D;
 
-/**
- * 프로그램 시작 시 짧은 부팅 연출 후 메인 화면으로 넘긴다.
- */
+// 부팅화면기능
 public class BootSplashFrame extends JFrame {
 
     public interface OnBootFinished {
@@ -42,9 +41,10 @@ public class BootSplashFrame extends JFrame {
 
     public BootSplashFrame(String clientId, OnBootFinished callback) {
         super("Starting...");
+        AppIcon.applyToFrame(this);
         setUndecorated(true);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(new Dimension(460, 240));
+        setSize(new Dimension(520, 300));
         setLocationRelativeTo(null);
 
         JPanel shell = new JPanel(new BorderLayout()) {
@@ -62,11 +62,15 @@ public class BootSplashFrame extends JFrame {
         shell.setOpaque(false);
         shell.setBorder(BorderFactory.createEmptyBorder(28, 32, 28, 32));
 
-        JLabel title = new JLabel("SMART VENDING", SwingConstants.CENTER);
-        title.setFont(KioskFonts.title());
-        title.setForeground(KioskColors.BLUE);
+        JLabel logo = new JLabel("▰", SwingConstants.CENTER);
+        logo.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 34));
+        logo.setForeground(KioskColors.BLUE);
 
-        JLabel sub = new JLabel("단말 " + clientId, SwingConstants.CENTER);
+        JLabel title = new JLabel("20214034_정영웅_자판기프로그램", SwingConstants.CENTER);
+        title.setFont(KioskFonts.title());
+        title.setForeground(KioskColors.BLUE_DARK);
+
+        JLabel sub = new JLabel("SMART VENDING · 단말 " + clientId, SwingConstants.CENTER);
         sub.setFont(KioskFonts.small());
         sub.setForeground(KioskColors.SUBTEXT);
 
@@ -78,9 +82,10 @@ public class BootSplashFrame extends JFrame {
         progressBar.setBackground(KioskColors.BG);
         progressBar.setBorder(BorderFactory.createEmptyBorder(12, 0, 0, 0));
 
-        JPanel top = new JPanel(new BorderLayout(0, 6));
+        JPanel top = new JPanel(new BorderLayout(0, 8));
         top.setOpaque(false);
-        top.add(title, BorderLayout.NORTH);
+        top.add(logo, BorderLayout.NORTH);
+        top.add(title, BorderLayout.CENTER);
         top.add(sub, BorderLayout.SOUTH);
 
         JPanel bottom = new JPanel(new BorderLayout());

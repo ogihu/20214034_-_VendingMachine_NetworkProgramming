@@ -3,9 +3,7 @@ package vending.admin;
 import vending.coin.CoinInventory;
 import vending.coin.CoinSlot;
 
-/**
- * 관리자 수금 처리. 반환용 최소 화폐는 남긴다.
- */
+// 수금기능
 public class CollectService {
 
     private static final int[] MIN_KEEP = {5, 5, 5, 5, 5};
@@ -22,6 +20,7 @@ public class CollectService {
         }
 
         int remain = requestAmount;
+        int[] planned = new int[UNITS.length];
         for (int i = 0; i < UNITS.length; i++) {
             CoinSlot slot = inventory.findSlot(UNITS[i]);
             int available = slot.getCount() - MIN_KEEP[i];
@@ -30,14 +29,32 @@ public class CollectService {
             }
             int need = remain / UNITS[i];
             int take = Math.min(need, available);
-            slot.take(take);
+            planned[i] = take;
             remain -= take * UNITS[i];
         }
 
         if (remain > 0) {
             return "요청 금액만큼 수금할 수 없습니다.";
         }
+
+        for (int i = 0; i < UNITS.length; i++) {
+            if (planned[i] <= 0) {
+                continue;
+            }
+            if (!inventory.findSlot(UNITS[i]).take(planned[i])) {
+                rollback(inventory, planned, i);
+                return "수금 처리 중 오류가 발생했습니다.";
+            }
+        }
         return null;
+    }
+
+    private void rollback(CoinInventory inventory, int[] planned, int failedIndex) {
+        for (int i = 0; i < failedIndex; i++) {
+            if (planned[i] > 0) {
+                inventory.findSlot(UNITS[i]).add(planned[i]);
+            }
+        }
     }
 
     public int maxCollectable(CoinInventory inventory) {

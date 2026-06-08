@@ -4,9 +4,7 @@ import vending.sales.model.SaleEntry;
 
 import java.util.List;
 
-/**
- * 음료 이름 기준 이진 탐색 (이름 배열이 정렬되어 있어야 함).
- */
+// 검색기능
 public class SalesSearcher {
 
     public int binarySearchDrinkIndex(String[] sortedNames, String target) {

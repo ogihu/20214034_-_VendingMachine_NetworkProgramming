@@ -6,9 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
 
-/**
- * 날짜 키 기준 TreeMap으로 매출을 묶어 둔다.
- */
+// 매출트리기능
 public class SalesTree {
 
     private final TreeMap<String, List<SaleEntry>> byDate = new TreeMap<>();

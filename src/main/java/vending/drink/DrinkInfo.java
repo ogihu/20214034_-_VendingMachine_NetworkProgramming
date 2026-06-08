@@ -2,9 +2,7 @@ package vending.drink;
 
 import java.io.Serializable;
 
-/**
- * 음료 1종에 대한 기본 정보.
- */
+// 음료정보
 public class DrinkInfo implements Serializable {
 
     private static final long serialVersionUID = 1L;

@@ -1,9 +1,6 @@
 package vending.drink;
 
-/**
- * 음료 재고를 연결 리스트로 관리한다.
- * 판매 시 head를 제거하고, 보충 시 tail에 노드를 추가한다.
- */
+// 재고리스트기능
 public class DrinkStockList implements java.io.Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -29,8 +26,8 @@ public class DrinkStockList implements java.io.Serializable {
         return size <= 0;
     }
 
-    /** 재고 1개 추가 (관리자 보충) */
     public void addOne() {
+        // 재고 추가
         StockNode node = new StockNode();
         if (head == null) {
             head = node;
@@ -44,7 +41,6 @@ public class DrinkStockList implements java.io.Serializable {
         size++;
     }
 
-    /** 재고 여러 개 추가 */
     public void addCount(int count) {
         if (count < 0) {
             throw new IllegalArgumentException("보충 수량은 0 이상이어야 합니다.");
@@ -54,11 +50,24 @@ public class DrinkStockList implements java.io.Serializable {
         }
     }
 
-    /** 판매 1건 처리 */
+    public void setCount(int count) {
+        if (count < 0) {
+            throw new IllegalArgumentException("재고 수량은 0 이상이어야 합니다.");
+        }
+        while (size < count) {
+            addOne();
+        }
+        while (size > count) {
+            sellOne();
+        }
+    }
+
     public boolean sellOne() {
         if (head == null) {
             return false;
         }
+
+        // 재고 배출
         head = head.next;
         size--;
         return true;

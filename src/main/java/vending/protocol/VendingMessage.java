@@ -2,10 +2,8 @@ package vending.protocol;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
-/**
- * JSON 한 줄로 주고받는 공통 메시지.
- */
 public class VendingMessage {
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -21,11 +19,14 @@ public class VendingMessage {
     public int price;
     public String date;
     public String serverId;
+    public String host;
     public String payload;
     public String timestamp;
+    public String messageId;
 
     public VendingMessage() {
         this.timestamp = LocalDateTime.now().format(TS);
+        this.messageId = UUID.randomUUID().toString();
     }
 
     public static VendingMessage sale(String clientId, String drink, int amount, String date) {
@@ -111,7 +112,7 @@ public class VendingMessage {
         VendingMessage m = new VendingMessage();
         m.type = MessageType.ACTIVE_SERVER;
         m.serverId = serverId;
-        m.clientId = host;
+        m.host = host;
         m.amount = port;
         return m;
     }
@@ -135,6 +136,57 @@ public class VendingMessage {
         return m;
     }
 
+    public static VendingMessage error(String message) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.ERROR;
+        m.payload = message;
+        return m;
+    }
+
+    public static VendingMessage remoteDrinkSet(String targetClientId, int index, String oldName,
+                                                String newName, int price) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.REMOTE_DRINK_SET;
+        m.clientId = targetClientId;
+        m.drink = oldName;
+        m.newName = newName;
+        m.price = price;
+        m.quantity = index;
+        return m;
+    }
+
+    public static VendingMessage remoteDrinkUpdate(int index, String oldName, String newName, int price) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.REMOTE_DRINK_UPDATE;
+        m.drink = oldName;
+        m.newName = newName;
+        m.price = price;
+        m.quantity = index;
+        return m;
+    }
+
+    public static VendingMessage queryRemote(String clientId) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.QUERY_REMOTE;
+        m.clientId = clientId;
+        return m;
+    }
+
+    public static VendingMessage snapshotRequest(String serverId) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.SNAPSHOT_REQUEST;
+        m.serverId = serverId;
+        return m;
+    }
+
+    public static VendingMessage snapshot(String serverId, String snapshotPayload) {
+        VendingMessage m = new VendingMessage();
+        m.type = MessageType.SNAPSHOT;
+        m.serverId = serverId;
+        m.payload = encodeB64(snapshotPayload);
+        return m;
+    }
+
     public String toJson() {
         StringBuilder sb = new StringBuilder("{");
         sb.append("\"type\":\"").append(type).append("\"");
@@ -143,8 +195,10 @@ public class VendingMessage {
         append(sb, "newName", newName);
         append(sb, "date", date);
         append(sb, "serverId", serverId);
+        append(sb, "host", host);
         append(sb, "payload", payload);
         append(sb, "timestamp", timestamp);
+        append(sb, "messageId", messageId);
         if (amount != 0) {
             sb.append(",\"amount\":").append(amount);
         }
@@ -196,6 +250,10 @@ public class VendingMessage {
         m.newName = extractString(json, "newName");
         m.date = extractString(json, "date");
         m.serverId = extractString(json, "serverId");
+        m.host = extractString(json, "host");
+        if (m.host.isEmpty()) {
+            m.host = extractString(json, "clientId");
+        }
         m.payload = extractString(json, "payload");
         m.timestamp = extractString(json, "timestamp");
         m.amount = extractInt(json, "amount");
@@ -203,7 +261,30 @@ public class VendingMessage {
         m.remaining = extractInt(json, "remaining");
         m.added = extractInt(json, "added");
         m.price = extractInt(json, "price");
+        m.messageId = extractString(json, "messageId");
+        if (m.messageId == null || m.messageId.isBlank()) {
+            m.messageId = legacyMessageId(m);
+        }
         return m;
+    }
+
+    private static String legacyMessageId(VendingMessage m) {
+        return String.join("|",
+                safe(m.type == null ? "" : m.type.name()),
+                safe(m.clientId),
+                safe(m.drink),
+                safe(m.newName),
+                safe(m.date),
+                safe(m.timestamp),
+                String.valueOf(m.amount),
+                String.valueOf(m.quantity),
+                String.valueOf(m.remaining),
+                String.valueOf(m.added),
+                String.valueOf(m.price));
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private static String extractString(String json, String key) {
@@ -213,11 +294,40 @@ public class VendingMessage {
             return "";
         }
         start += token.length();
-        int end = json.indexOf('"', start);
-        if (end < 0) {
-            return "";
+        StringBuilder sb = new StringBuilder();
+        boolean escaped = false;
+        for (int i = start; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (escaped) {
+                switch (c) {
+                    case 'n':
+                        sb.append('\n');
+                        break;
+                    case 'r':
+                        sb.append('\r');
+                        break;
+                    case 't':
+                        sb.append('\t');
+                        break;
+                    case '"':
+                    case '\\':
+                    case '/':
+                        sb.append(c);
+                        break;
+                    default:
+                        sb.append(c);
+                        break;
+                }
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                break;
+            } else {
+                sb.append(c);
+            }
         }
-        return json.substring(start, end);
+        return sb.toString();
     }
 
     private static int extractInt(String json, String key) {
