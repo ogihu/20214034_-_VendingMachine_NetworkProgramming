@@ -22,7 +22,7 @@ public class ChangeCalculator {
 
     public static String preview(CoinInventory inventory, int amount) {
         if (amount <= 0) {
-            return "거스름돈 없음";
+            return "0원";
         }
 
         CoinInventory copy = copyInventory(inventory);

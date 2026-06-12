@@ -22,6 +22,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 // 서버데이터기능
 public class ServerDataStore {
 
+    private static final String STATE_HEADER = "#STATE_V2";
+
     private final Path salesLog = DataPaths.ROOT.resolve("server").resolve("sales.log");
     private final Path stockLog = DataPaths.ROOT.resolve("server").resolve("stock.log");
     private final Path alertLog = DataPaths.ROOT.resolve("server").resolve("alerts.log");
@@ -163,10 +165,6 @@ public class ServerDataStore {
         if (importingSnapshot || message.type == MessageType.SYNC || message.type == MessageType.SNAPSHOT) {
             return;
         }
-        syncHistory.add(message.toJson());
-        while (syncHistory.size() > 800) {
-            syncHistory.remove(0);
-        }
         persistSnapshot();
     }
 
@@ -232,21 +230,95 @@ public class ServerDataStore {
     }
 
     public String exportSnapshot() {
-        // 스냅샷 생성
-        StringBuilder sb = new StringBuilder();
-        synchronized (syncHistory) {
-            for (String line : syncHistory) {
-                sb.append(line).append("\n");
+        StringBuilder sb = new StringBuilder(STATE_HEADER).append('\n');
+        for (Map.Entry<String, Integer> e : totalSalesByClient.entrySet()) {
+            sb.append("T|").append(e.getKey()).append('|').append(e.getValue()).append('\n');
+        }
+        for (Map.Entry<String, ConcurrentHashMap<String, Integer>> day : dailyTotalByClient.entrySet()) {
+            for (Map.Entry<String, Integer> row : day.getValue().entrySet()) {
+                sb.append("DT|").append(day.getKey()).append('|').append(row.getKey())
+                        .append('|').append(row.getValue()).append('\n');
+            }
+        }
+        for (Map.Entry<String, ConcurrentHashMap<String, Integer>> month : monthlyTotalByClient.entrySet()) {
+            for (Map.Entry<String, Integer> row : month.getValue().entrySet()) {
+                sb.append("MT|").append(month.getKey()).append('|').append(row.getKey())
+                        .append('|').append(row.getValue()).append('\n');
+            }
+        }
+        for (Map.Entry<String, ConcurrentHashMap<String, Integer>> day : dailyByDrink.entrySet()) {
+            for (Map.Entry<String, Integer> row : day.getValue().entrySet()) {
+                String[] keyParts = row.getKey().split("\\|", 2);
+                if (keyParts.length == 2) {
+                    sb.append("DD|").append(day.getKey()).append('|').append(keyParts[0])
+                            .append('|').append(keyParts[1]).append('|').append(row.getValue()).append('\n');
+                }
+            }
+        }
+        for (Map.Entry<String, ConcurrentHashMap<String, Integer>> month : monthlyByDrink.entrySet()) {
+            for (Map.Entry<String, Integer> row : month.getValue().entrySet()) {
+                String[] keyParts = row.getKey().split("\\|", 2);
+                if (keyParts.length == 2) {
+                    sb.append("MD|").append(month.getKey()).append('|').append(keyParts[0])
+                            .append('|').append(keyParts[1]).append('|').append(row.getValue()).append('\n');
+                }
+            }
+        }
+        for (Map.Entry<String, ConcurrentHashMap<String, Integer>> client : stockByClient.entrySet()) {
+            for (Map.Entry<String, Integer> drink : client.getValue().entrySet()) {
+                sb.append("S|").append(client.getKey()).append('|').append(drink.getKey())
+                        .append('|').append(drink.getValue()).append('\n');
+            }
+        }
+        for (Map.Entry<String, String> e : drinkNames.entrySet()) {
+            String[] keyParts = e.getKey().split("\\|", 2);
+            if (keyParts.length == 2) {
+                sb.append("DN|").append(keyParts[0]).append('|').append(keyParts[1])
+                        .append('|').append(e.getValue()).append('\n');
+            }
+        }
+        synchronized (recentAlerts) {
+            for (String alert : recentAlerts) {
+                sb.append("A|").append(escapePipe(alert)).append('\n');
             }
         }
         return sb.toString().trim();
     }
 
     public synchronized void importSnapshot(String payload) throws VendingException {
-        // 스냅샷 적용
         if (payload == null || payload.isBlank()) {
             return;
         }
+        if (payload.trim().startsWith(STATE_HEADER)) {
+            importStateV2(payload);
+            return;
+        }
+        importLegacyEvents(payload);
+    }
+
+    private void importStateV2(String payload) throws VendingException {
+        try {
+            importingSnapshot = true;
+            clearAllState();
+            for (String line : payload.split("\n")) {
+                if (line == null || line.isBlank()) {
+                    continue;
+                }
+                line = line.trim();
+                if (line.equals(STATE_HEADER)) {
+                    continue;
+                }
+                parseStateLine(line);
+            }
+            persistSnapshot();
+        } catch (IOException e) {
+            throw new VendingException("스냅샷 적용 실패", e);
+        } finally {
+            importingSnapshot = false;
+        }
+    }
+
+    private void importLegacyEvents(String payload) throws VendingException {
         try {
             importingSnapshot = true;
             String[] lines = payload.split("\n");
@@ -268,6 +340,99 @@ public class ServerDataStore {
         }
     }
 
+    private void clearAllState() {
+        stockByClient.clear();
+        totalSalesByClient.clear();
+        dailyTotalByClient.clear();
+        monthlyTotalByClient.clear();
+        dailyByDrink.clear();
+        monthlyByDrink.clear();
+        drinkNames.clear();
+        recentAlerts.clear();
+    }
+
+    private void parseStateLine(String line) {
+        int first = line.indexOf('|');
+        if (first < 0) {
+            return;
+        }
+        String tag = line.substring(0, first);
+        String[] parts = line.substring(first + 1).split("\\|", -1);
+        switch (tag) {
+            case "T":
+                if (parts.length >= 2) {
+                    totalSalesByClient.put(parts[0], Integer.parseInt(parts[1]));
+                }
+                break;
+            case "DT":
+                if (parts.length >= 3) {
+                    dailyTotalByClient
+                            .computeIfAbsent(parts[0], k -> new ConcurrentHashMap<>())
+                            .put(parts[1], Integer.parseInt(parts[2]));
+                }
+                break;
+            case "MT":
+                if (parts.length >= 3) {
+                    monthlyTotalByClient
+                            .computeIfAbsent(parts[0], k -> new ConcurrentHashMap<>())
+                            .put(parts[1], Integer.parseInt(parts[2]));
+                }
+                break;
+            case "DD":
+                if (parts.length >= 4) {
+                    dailyByDrink
+                            .computeIfAbsent(parts[0], k -> new ConcurrentHashMap<>())
+                            .put(parts[1] + "|" + parts[2], Integer.parseInt(parts[3]));
+                }
+                break;
+            case "MD":
+                if (parts.length >= 4) {
+                    monthlyByDrink
+                            .computeIfAbsent(parts[0], k -> new ConcurrentHashMap<>())
+                            .put(parts[1] + "|" + parts[2], Integer.parseInt(parts[3]));
+                }
+                break;
+            case "S":
+                if (parts.length >= 3) {
+                    stockByClient
+                            .computeIfAbsent(parts[0], k -> new ConcurrentHashMap<>())
+                            .put(parts[1], Integer.parseInt(parts[2]));
+                }
+                break;
+            case "DN":
+                if (parts.length >= 3) {
+                    drinkNames.put(parts[0] + "|" + parts[1], parts[2]);
+                }
+                break;
+            case "A":
+                recentAlerts.add(unescapePipe(line.substring(first + 1)));
+                break;
+            default:
+                break;
+        }
+    }
+
+    private static String escapePipe(String value) {
+        return value.replace("\\", "\\\\").replace("|", "\\|");
+    }
+
+    private static String unescapePipe(String value) {
+        StringBuilder sb = new StringBuilder();
+        boolean escaped = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (escaped) {
+                sb.append(c);
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
     private void persistSnapshot() throws IOException {
         String snap = exportSnapshot();
         if (!snap.isBlank()) {
@@ -279,9 +444,6 @@ public class ServerDataStore {
         synchronized (syncHistory) {
             if (!syncHistory.contains(line)) {
                 syncHistory.add(line);
-                while (syncHistory.size() > 800) {
-                    syncHistory.remove(0);
-                }
             }
         }
     }

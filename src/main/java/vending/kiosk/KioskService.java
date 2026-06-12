@@ -375,20 +375,6 @@ public class KioskService {
             return "품절입니다.";
         }
 
-        int remaining = stock.size();
-        eventQueue.enqueue(VendingMessage.stock(clientId, drink.getName(), remaining));
-        if (remaining <= 2 && remaining > 0) {
-            eventQueue.enqueue(VendingMessage.stockAlert(clientId, drink.getName(), remaining));
-        }
-        if (stock.isSoldOut()) {
-            try {
-                inventoryStore.logSoldOut(drink.getName());
-            } catch (VendingException e) {
-                notifyMessage(e.getMessage());
-            }
-            eventQueue.enqueue(VendingMessage.stockAlert(clientId, drink.getName(), 0));
-        }
-
         ChangeStack stack = new ChangeStack(16);
         if (!ChangeCalculator.dispense(coinInventory, change, stack)) {
             stock.addOne();
@@ -403,6 +389,20 @@ public class KioskService {
             stock.addOne();
             ChangeCalculator.refund(coinInventory, stack);
             return e.getMessage();
+        }
+
+        int remaining = stock.size();
+        eventQueue.enqueue(VendingMessage.stock(clientId, drink.getName(), remaining));
+        if (remaining <= 2 && remaining > 0) {
+            eventQueue.enqueue(VendingMessage.stockAlert(clientId, drink.getName(), remaining));
+        }
+        if (stock.isSoldOut()) {
+            try {
+                inventoryStore.logSoldOut(drink.getName());
+            } catch (VendingException e) {
+                notifyMessage(e.getMessage());
+            }
+            eventQueue.enqueue(VendingMessage.stockAlert(clientId, drink.getName(), 0));
         }
 
         insertedMoney.release();
